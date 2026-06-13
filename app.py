@@ -1,19 +1,10 @@
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_file, Response
 from werkzeug.utils import secure_filename
 import paho.mqtt.client as mqtt
 import threading
 import os
 
 app = Flask(__name__)
-
-# Buat folder uploads jika belum ada
-os.makedirs('uploads', exist_ok=True)
-
-# Konfigurasi dari environment variable (untuk cloud deployment)
-MQTT_HOST = os.environ.get('MQTT_HOST', '127.0.0.1')
-MQTT_PORT = int(os.environ.get('MQTT_PORT', 1883))
-MQTT_USER = os.environ.get('MQTT_USER', '')
-MQTT_PASS = os.environ.get('MQTT_PASS', '')
 
 # ================= DATA SENSOR =================
 data_sensor = {
@@ -26,10 +17,7 @@ data_sensor = {
     "tegangan_baterai": 0,
     "pir": "tidak ada gerak",
     "rfid": "-",
-    "kamera": "-",
-    "cahaya": 0,
-    "lampu_mode": "AUTO",
-    "lampu_nyala": "0"
+    "kamera": "-"
 }
 
 ai_result = "unknown"
@@ -64,28 +52,14 @@ def on_message(client, userdata, msg):
         data_sensor['pir'] = nilai
     elif topik == "smarthome/sensor/rfid":
         data_sensor['rfid'] = nilai
-    elif topik == "smarthome/sensor/cahaya":
-        data_sensor['cahaya'] = nilai
-    elif topik == "smarthome/sensor/lampu_mode":
-        data_sensor['lampu_mode'] = nilai
-    elif topik == "smarthome/sensor/lampu_nyala":
-        data_sensor['lampu_nyala'] = nilai
     elif topik == "kamera/ai":
         ai_result = nilai
 
 mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 mqtt_client.on_connect = on_connect
 mqtt_client.on_message = on_message
-
-if MQTT_USER:
-    mqtt_client.username_pw_set(MQTT_USER, MQTT_PASS)
-
-try:
-    mqtt_client.connect(MQTT_HOST, MQTT_PORT, 60)
-    mqtt_client.loop_start()
-    print(f"MQTT menghubungkan ke {MQTT_HOST}:{MQTT_PORT}")
-except Exception as e:
-    print(f"MQTT gagal terhubung: {e} — berjalan tanpa MQTT")
+mqtt_client.connect("127.0.0.1", 1883, 60)
+mqtt_client.loop_start()
 
 # ================= ROUTES =================
 
@@ -106,7 +80,7 @@ def ai_camera():
 def get_sensor():
     return jsonify({
         **data_sensor,
-        "kamera": ai_result
+        "kamera": ai_result if ai_result != "unknown" else "-"
     })
 
 # ================= API AI DARI WEB =================
@@ -126,55 +100,11 @@ def receive_ai():
     return jsonify({"status": "ok"})
 
 # ================= API KAMERA PREDIKSI =================
-@app.route('/api/kamera/prediksi', methods=['POST'])
-def kamera_prediksi():
-    try:
-        # Terima gambar dari ESP32-CAM (bytes)
-        if request.content_type == 'image/jpeg':
-            foto_bytes = request.data
-            filepath = os.path.join('uploads', 'esp32cam.jpg')
-            with open(filepath, 'wb') as f:
-                f.write(foto_bytes)
-
-        # Terima gambar dari form upload web
-        elif 'gambar' in request.files:
-            file = request.files['gambar']
-            filename = secure_filename(file.filename)
-            filepath = os.path.join('uploads', filename)
-            file.save(filepath)
-
-        else:
-            return jsonify({"error": "Tidak ada gambar"}), 400
-
-        # Import predict di sini supaya tidak error kalau file belum ada
-        from predict import prediksi
-        hasil, confidence = prediksi(filepath)
-
-        # Update ai_result
-        global ai_result
-        ai_result = hasil
-
-        # Kontrol buzzer otomatis via MQTT
-        if hasil.lower() == "hewan":
-            mqtt_client.publish("smarthome/aktuator/buzzer", "ON")
-            status_buzzer = "ON"
-        else:
-            mqtt_client.publish("smarthome/aktuator/buzzer", "OFF")
-            status_buzzer = "OFF"
-
-        return jsonify({
-            "hasil": hasil,
-            "confidence": f"{confidence*100:.2f}%",
-            "buzzer": status_buzzer
-        })
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-# ================= API AI REALTIME =================
 @app.route('/api/ai-realtime', methods=['POST'])
 def ai_realtime():
     global ai_result
     try:
+        # Terima gambar dari webcam browser
         if 'gambar' not in request.files:
             return jsonify({"error": "Tidak ada gambar"}), 400
 
@@ -182,19 +112,20 @@ def ai_realtime():
         filepath = os.path.join('uploads', 'webcam.jpg')
         file.save(filepath)
 
+        # Import predict
         from predict import prediksi
         hasil, confidence = prediksi(filepath)
 
+        # Update ai_result global
         ai_result = hasil
 
+        # Kontrol buzzer via MQTT
         if hasil.lower() == "hewan":
             mqtt_client.publish("smarthome/aktuator/buzzer", "ON")
             status_buzzer = "ON"
         else:
             mqtt_client.publish("smarthome/aktuator/buzzer", "OFF")
             status_buzzer = "OFF"
-
-        print(f"Hasil prediksi: {hasil}, confidence: {confidence*100:.2f}%")
 
         return jsonify({
             "hasil": hasil,
@@ -203,12 +134,14 @@ def ai_realtime():
         })
 
     except Exception as e:
-        print("Error ai-realtime:", str(e))
+        print("Error:", str(e))
         return jsonify({
             "hasil": "Error",
             "confidence": "0%",
-            "buzzer": "OFF"
+            "buzzer": "OFF",
+            "error": str(e)
         }), 500
+
 # ================= API AKTUATOR =================
 @app.route('/api/aktuator/<nama>', methods=['POST'])
 def kontrol_aktuator(nama):
@@ -222,37 +155,44 @@ def kontrol_aktuator(nama):
     return jsonify({
         "pesan": f"{nama} berhasil {status}"
     })
+
+# ================= RUN =================
+if __name__ == '__main__':
+    app.run(debug=True)
 # ================= API STREAM KAMERA =================
-from flask import send_file, Response
-import time
+from flask import send_file
+import datetime
 
 @app.route('/api/kamera/stream')
 def kamera_stream():
     try:
+        # Coba esp32cam.jpg dulu
         filepath = os.path.join('uploads', 'esp32cam.jpg')
+        
+        # Kalau tidak ada, pakai webcam.jpg
+        if not os.path.exists(filepath):
+            filepath = os.path.join('uploads', 'webcam.jpg')
+        
+        # Kalau tidak ada, pakai frame.jpg
+        if not os.path.exists(filepath):
+            filepath = os.path.join('uploads', 'frame.jpg')
+        
         if os.path.exists(filepath):
             return send_file(filepath, mimetype='image/jpeg')
         else:
-            # Kalau belum ada gambar dari ESP32-CAM
-            # kirim gambar placeholder
             return jsonify({"error": "Belum ada gambar"}), 404
+            
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 @app.route('/api/kamera/status')
 def kamera_status():
     filepath = os.path.join('uploads', 'esp32cam.jpg')
     ada = os.path.exists(filepath)
     waktu = None
     if ada:
-        waktu = os.path.getmtime(filepath)
-        import datetime
-        waktu = datetime.datetime.fromtimestamp(waktu).strftime('%H:%M:%S')
+        ts = os.path.getmtime(filepath)
+        waktu = datetime.datetime.fromtimestamp(ts).strftime('%H:%M:%S')
     return jsonify({
         "aktif": ada,
         "terakhir_update": waktu
     })
-# ================= RUN =================
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=os.environ.get('FLASK_DEBUG', 'false').lower() == 'true')
