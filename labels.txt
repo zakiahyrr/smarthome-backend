@@ -1,0 +1,3 @@
+0 manusia
+1 hewan
+2 kosong
