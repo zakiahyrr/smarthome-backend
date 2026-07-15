@@ -1,0 +1,31 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+uploads/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Netlify local
+.netlify/
+
+# Claude settings
+.claude/
+
+# Monitoring results
+monitor_result*.txt
+monitor_log.txt
+monitor_10min.txt
+monitor_5min.txt
+monitor*.ps1
+monitor*.py
+
+# Windows scripts
+jalankan.bat
+matikan.bat
+
+# Old project subfolder
+smarthome/

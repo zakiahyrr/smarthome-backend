@@ -1,0 +1,1330 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Miniatur Smart Home Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
+<style>
+  :root {
+    --bg:            #f4f1ea;
+    --bg-soft:       #ebe7dc;
+    --paper:         #ffffff;
+    --ink:           #2a3a2e;
+    --ink-soft:      #5b6c5e;
+    --muted:         #8a9a8d;
+    --leaf:          #6a9a6b;
+    --leaf-deep:     #4f7d52;
+    --leaf-bg:       #e6efe1;
+    --moss:          #b6c9a8;
+    --sun:           #e9b872;
+    --sun-bg:        #f7ecd6;
+    --sky:           #8fb8c9;
+    --sky-bg:        #e3eef2;
+    --terracotta:    #c97b63;
+    --terracotta-bg: #f3dcd2;
+    --line:          rgba(42,58,46,0.08);
+    --line-strong:   rgba(42,58,46,0.14);
+    --shadow:        0 1px 2px rgba(42,58,46,0.04), 0 8px 24px rgba(42,58,46,0.06);
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    color: var(--ink);
+    min-height: 100vh;
+    background: var(--bg);
+    background-image:
+      radial-gradient(900px 500px at 0% -10%, rgba(106,154,107,0.08), transparent 60%),
+      radial-gradient(800px 500px at 110% 0%, rgba(143,184,201,0.10), transparent 60%);
+    overflow-x: hidden;
+  }
+
+  .leaves {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden;
+  }
+  .leaves svg {
+    position: absolute; opacity: 0.10; color: var(--leaf-deep);
+  }
+  .leaves .l1 { top: 8%;   left: -20px;  width: 160px; transform: rotate(-30deg); }
+  .leaves .l2 { top: 35%;  right: -30px; width: 200px; transform: rotate(40deg);  opacity: 0.08; }
+  .leaves .l3 { bottom: 5%;  left: 10%;  width: 130px; transform: rotate(180deg); opacity: 0.07; }
+  .leaves .l4 { bottom: 20%; right: 15%; width: 110px; transform: rotate(-15deg); opacity: 0.07; }
+
+  .wrap {
+    position: relative; z-index: 1;
+    max-width: 1280px; margin: 0 auto; padding: 32px 28px 80px;
+  }
+
+  .material-icons-round {
+    font-family: 'Material Icons Round'; font-weight: normal; font-style: normal;
+    line-height: 1; letter-spacing: normal; text-transform: none;
+    display: inline-block; white-space: nowrap; word-wrap: normal;
+    direction: ltr; -webkit-font-smoothing: antialiased;
+  }
+
+  /* Header */
+  .header {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    padding: 26px 32px;
+    box-shadow: var(--shadow);
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 24px; flex-wrap: wrap;
+    margin-bottom: 24px;
+    position: relative; overflow: hidden;
+  }
+  .header::after {
+    content: ""; position: absolute; right: -40px; bottom: -40px;
+    width: 220px; height: 220px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(106,154,107,0.12), transparent 70%);
+    pointer-events: none;
+  }
+  .brand { display: flex; align-items: center; gap: 16px; }
+  .brand-mark {
+    width: 56px; height: 56px; border-radius: 18px;
+    background: linear-gradient(135deg, var(--leaf) 0%, var(--leaf-deep) 100%);
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #fff; box-shadow: 0 6px 16px rgba(79,125,82,0.30);
+    flex-shrink: 0;
+  }
+  .brand-mark .material-icons-round { font-size: 30px; }
+  .brand h1 {
+    font-family: 'Fraunces', serif; font-weight: 600;
+    margin: 0 0 2px; font-size: 26px;
+    color: var(--ink); letter-spacing: -0.5px;
+  }
+  .brand .sub {
+    color: var(--ink-soft); font-size: 14px;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .live-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--leaf);
+    box-shadow: 0 0 0 4px rgba(106,154,107,0.18);
+    animation: gentlePulse 2.4s ease-in-out infinite;
+    transition: background 0.4s, box-shadow 0.4s;
+  }
+  .live-dot.offline {
+    background: var(--terracotta);
+    box-shadow: 0 0 0 4px rgba(201,123,99,0.18);
+    animation: none;
+  }
+  @keyframes gentlePulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(106,154,107,0.18); }
+    50%       { box-shadow: 0 0 0 8px rgba(106,154,107,0.05); }
+  }
+  .offline-badge {
+    display: none;
+    align-items: center; gap: 4px;
+    padding: 3px 10px; border-radius: 999px;
+    background: var(--terracotta-bg); color: var(--terracotta);
+    font-size: 12px; font-weight: 600;
+  }
+  .offline-badge .material-icons-round { font-size: 14px; }
+  .clock { text-align: right; position: relative; z-index: 1; }
+  .clock .time {
+    font-family: 'Fraunces', serif; font-size: 32px; font-weight: 500;
+    color: var(--leaf-deep); letter-spacing: -0.5px; line-height: 1;
+  }
+  .clock .date { color: var(--ink-soft); font-size: 14px; margin-top: 6px; }
+
+  /* Section */
+  .section {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    padding: 28px;
+    box-shadow: var(--shadow);
+    margin-bottom: 24px;
+  }
+  .section-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 20px; gap: 12px; flex-wrap: wrap;
+  }
+  .section-title {
+    font-family: 'Fraunces', serif; font-weight: 600;
+    font-size: 22px; margin: 0; color: var(--ink);
+    display: flex; align-items: center; gap: 12px;
+    letter-spacing: -0.3px;
+  }
+  .section-title .ic {
+    width: 36px; height: 36px; border-radius: 12px;
+    background: var(--leaf-bg); color: var(--leaf-deep);
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .section-title .ic .material-icons-round { font-size: 22px; }
+  .section-meta { color: var(--muted); font-size: 13px; }
+
+  /* Sensors */
+  .sensor-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px;
+  }
+  .sensor {
+    padding: 18px; border-radius: 18px;
+    background: var(--bg-soft);
+    border: 1px solid transparent;
+    transition: border-color 0.4s, background 0.4s;
+    opacity: 0; transform: translateY(8px);
+    animation: fadeUp 0.5s ease forwards;
+  }
+  @keyframes fadeUp { to { opacity: 1; transform: translateY(0); } }
+
+  .sensor.tone-leaf  { background: var(--leaf-bg); }
+  .sensor.tone-sky   { background: var(--sky-bg); }
+  .sensor.tone-sun   { background: var(--sun-bg); }
+  .sensor.tone-terra { background: var(--terracotta-bg); }
+
+  .sensor-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .sensor-icon {
+    width: 36px; height: 36px; border-radius: 12px;
+    background: rgba(255,255,255,0.6); color: var(--leaf-deep);
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .sensor-icon .material-icons-round { font-size: 20px; }
+  .tone-sky   .sensor-icon { color: #4d7e92; }
+  .tone-sun   .sensor-icon { color: #b8842b; }
+  .tone-terra .sensor-icon { color: #a85a44; }
+
+  .sensor-name { font-size: 13px; color: var(--ink-soft); font-weight: 500; }
+  .sensor-value {
+    font-family: 'Fraunces', serif; font-weight: 500;
+    font-size: 30px; line-height: 1.1; color: var(--ink);
+    margin-top: 6px; letter-spacing: -0.5px;
+  }
+  .sensor-value .unit {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-size: 14px; font-weight: 500;
+    color: var(--ink-soft); margin-left: 4px;
+  }
+  .sensor-status {
+    margin-top: 10px; font-size: 13px; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px;
+    background: rgba(255,255,255,0.6);
+  }
+  .sensor-status .material-icons-round { font-size: 14px; }
+
+  .status-ok   { color: var(--leaf-deep); }
+  .status-bad  { color: #b14a4a; background: #f6e3df !important; }
+  .status-warn { color: #a87718; }
+  .status-info { color: #4d7e92; }
+
+  .sensor.alert {
+    background: var(--terracotta-bg) !important;
+    border-color: rgba(177,74,74,0.25);
+  }
+
+  .sparkbar {
+    height: 4px; width: 100%; border-radius: 999px;
+    background: rgba(255,255,255,0.55); margin-top: 12px; overflow: hidden;
+  }
+  .sparkbar > span {
+    display: block; height: 100%; width: 0%;
+    background: var(--leaf);
+    transition: width 1.5s cubic-bezier(.25,.1,.25,1);
+    border-radius: 999px;
+  }
+  .tone-sky .sparkbar > span { background: var(--sky); }
+  .tone-sun .sparkbar > span { background: var(--sun); }
+
+  /* Charts */
+  .charts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+  }
+  .chart-card { padding: 20px; border-radius: 18px; background: var(--bg-soft); }
+  .chart-card .head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .chart-card .name {
+    font-size: 13px; color: var(--ink-soft); font-weight: 600;
+    letter-spacing: 0.3px; text-transform: uppercase;
+  }
+  .chart-card .now {
+    font-family: 'Fraunces', serif;
+    font-size: 24px; font-weight: 600; letter-spacing: -0.5px;
+  }
+  .chart-card .delta { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  .chart-wrap { height: 160px; }
+
+  /* Actuators */
+  .actuators {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+  }
+  .actuator {
+    padding: 22px; border-radius: 20px;
+    background: var(--bg-soft);
+    border: 1px solid transparent;
+    cursor: pointer; user-select: none;
+    transition: all 0.35s ease;
+  }
+  .actuator:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(42,58,46,0.08); }
+  .actuator.on { background: var(--leaf-bg); border-color: rgba(106,154,107,0.3); }
+
+  .actuator-top {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 18px;
+  }
+  .actuator-icon {
+    width: 48px; height: 48px; border-radius: 14px;
+    background: rgba(255,255,255,0.7); color: var(--ink-soft);
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: all 0.35s ease;
+  }
+  .actuator-icon .material-icons-round { font-size: 26px; }
+  .actuator.on .actuator-icon {
+    background: var(--leaf); color: #fff;
+    box-shadow: 0 4px 12px rgba(106,154,107,0.35);
+    animation: gentleBob 2.4s ease-in-out infinite;
+  }
+  @keyframes gentleBob {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+  }
+  .toggle {
+    --w: 52px; --h: 30px;
+    width: var(--w); height: var(--h);
+    background: rgba(42,58,46,0.10);
+    border-radius: 999px; position: relative;
+    transition: background 0.35s ease; flex-shrink: 0;
+  }
+  .toggle::after {
+    content: "";
+    position: absolute; top: 3px; left: 3px;
+    width: calc(var(--h) - 6px); height: calc(var(--h) - 6px);
+    border-radius: 50%; background: #fff;
+    box-shadow: 0 2px 6px rgba(42,58,46,0.18);
+    transition: left 0.35s cubic-bezier(.6,-0.2,.4,1.4);
+  }
+  .actuator.on .toggle { background: var(--leaf); }
+  .actuator.on .toggle::after { left: calc(var(--w) - var(--h) + 3px); }
+
+  .actuator-name {
+    font-family: 'Fraunces', serif; font-weight: 600;
+    font-size: 20px; color: var(--ink); letter-spacing: -0.3px;
+  }
+  .actuator-desc { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
+  .actuator-state {
+    margin-top: 14px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding-top: 14px;
+    border-top: 1px dashed var(--line-strong);
+  }
+  .state-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .state-value { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 600; color: var(--muted); }
+  .actuator.on .state-value { color: var(--leaf-deep); }
+
+  /* Offline toast */
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: #fff;
+    padding: 12px 22px; border-radius: 14px;
+    font-size: 14px; font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.20);
+    z-index: 999; opacity: 0; transition: opacity 0.3s;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+  .toast .material-icons-round { font-size: 18px; color: var(--terracotta); }
+
+  /* Camera */
+  .camera-section {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr;
+    gap: 18px;
+  }
+  @media (max-width: 900px) { .camera-section { grid-template-columns: 1fr; } }
+
+  .tabs {
+    display: inline-flex; gap: 4px;
+    padding: 4px; background: var(--bg-soft);
+    border-radius: 14px; margin-bottom: 16px;
+  }
+  .tab {
+    padding: 9px 18px; border-radius: 10px;
+    background: transparent; color: var(--ink-soft);
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: all 0.25s;
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 0; font-family: inherit;
+  }
+  .tab .material-icons-round { font-size: 16px; }
+  .tab:hover { color: var(--ink); }
+  .tab.active {
+    background: var(--paper); color: var(--leaf-deep);
+    box-shadow: 0 2px 6px rgba(42,58,46,0.06);
+  }
+
+  .camera-stage {
+    aspect-ratio: 16 / 10;
+    border-radius: 18px;
+    background: var(--bg-soft);
+    background-image:
+      repeating-linear-gradient(45deg,
+        rgba(42,58,46,0.025) 0 1px, transparent 1px 14px);
+    border: 1px dashed var(--line-strong);
+    position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.35s ease;
+  }
+  .camera-stage.active {
+    background-color: #2c3a30;
+    background-image:
+      radial-gradient(circle at 50% 50%, rgba(106,154,107,0.15), transparent 70%);
+    border-color: var(--leaf);
+    border-style: solid;
+  }
+  .scanline {
+    position: absolute; left: 0; right: 0; height: 80px;
+    background: linear-gradient(180deg, transparent, rgba(106,154,107,0.18), transparent);
+    top: -80px; opacity: 0; z-index: 2;
+  }
+  .camera-stage.active .scanline {
+    opacity: 1; animation: scan 3s ease-in-out infinite;
+  }
+  @keyframes scan { 0% { top: -80px; } 100% { top: 100%; } }
+
+  .rec {
+    position: absolute; top: 14px; left: 14px; z-index: 4;
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 10px;
+    background: rgba(255,255,255,0.92);
+    border-radius: 999px;
+    font-size: 12px; font-weight: 600;
+    color: #b14a4a; opacity: 0;
+  }
+  .camera-stage.active .rec { opacity: 1; }
+  .rec .dot {
+    width: 8px; height: 8px; border-radius: 50%; background: #b14a4a;
+    animation: blink 1.2s ease-in-out infinite;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .bbox {
+    position: absolute; z-index: 5;
+    border: 2px solid var(--leaf);
+    border-radius: 8px; opacity: 0;
+    transition: all 0.6s ease;
+    background: rgba(106,154,107,0.06);
+  }
+  .camera-stage.active .bbox { opacity: 1; }
+  .bbox::before {
+    content: attr(data-label);
+    position: absolute; top: -24px; left: -2px;
+    background: var(--leaf); color: #fff;
+    font-size: 11px; font-weight: 600;
+    padding: 3px 8px; border-radius: 6px;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+  .bbox.danger { border-color: var(--terracotta); background: rgba(201,123,99,0.10); }
+  .bbox.danger::before { background: var(--terracotta); }
+
+  .placeholder {
+    text-align: center; color: var(--muted); z-index: 3;
+  }
+  .placeholder .material-icons-round { font-size: 56px; color: var(--moss); margin-bottom: 8px; }
+  .placeholder .ph-title {
+    font-family: 'Fraunces', serif; font-size: 18px; color: var(--ink-soft); font-weight: 500;
+  }
+  .placeholder .ph-sub { font-size: 13px; margin-top: 4px; }
+  .camera-stage.active .placeholder { display: none; }
+
+  .cam-controls { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  .btn {
+    padding: 11px 20px; border-radius: 12px;
+    border: 1px solid var(--line-strong);
+    background: var(--paper); color: var(--ink);
+    cursor: pointer; font-family: inherit;
+    font-size: 14px; font-weight: 600;
+    transition: all 0.2s;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .btn .material-icons-round { font-size: 18px; }
+  .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(42,58,46,0.06); }
+  .btn:active { transform: translateY(1px) scale(0.99); }
+  .btn-primary {
+    background: var(--leaf-deep); border-color: var(--leaf-deep);
+    color: #fff; box-shadow: 0 4px 12px rgba(79,125,82,0.25);
+  }
+  .btn-primary:hover { background: #43703f; }
+  .btn-danger { background: var(--paper); color: #b14a4a; border-color: rgba(177,74,74,0.3); }
+
+  .cam-info {
+    padding: 20px; border-radius: 18px;
+    background: var(--bg-soft);
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .info-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 14px;
+    background: var(--paper); border-radius: 12px;
+    border: 1px solid var(--line);
+  }
+  .info-row .k {
+    font-size: 12px; color: var(--ink-soft);
+    text-transform: uppercase; letter-spacing: 0.4px;
+    font-weight: 600;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .info-row .k .material-icons-round { font-size: 16px; color: var(--leaf); }
+  .info-row .v {
+    font-family: 'Fraunces', serif;
+    font-size: 17px; font-weight: 600;
+    color: var(--ink); letter-spacing: -0.2px;
+  }
+  .info-row .v.muted { color: var(--muted); }
+  .info-row .v.alert { color: #b14a4a; }
+
+  .conf-wrap {
+    padding: 12px 14px;
+    background: var(--paper); border-radius: 12px;
+    border: 1px solid var(--line);
+  }
+  .conf-wrap .top {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px;
+  }
+  .conf-bar {
+    height: 8px; background: var(--bg-soft); border-radius: 999px; overflow: hidden;
+  }
+  .conf-bar > span {
+    display: block; height: 100%; width: 0%;
+    background: var(--leaf); border-radius: 999px;
+    transition: width 0.6s cubic-bezier(.25,.1,.25,1);
+  }
+
+  .foot {
+    text-align: center; color: var(--muted); font-size: 13px;
+    margin-top: 20px;
+    font-family: 'Fraunces', serif; font-style: italic;
+  }
+
+  @media (max-width: 700px) {
+    .header { flex-direction: column; align-items: flex-start; }
+    .clock { text-align: left; }
+    .wrap { padding: 20px 16px 60px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="leaves" aria-hidden="true">
+  <svg class="l1" viewBox="0 0 100 100" fill="currentColor"><path d="M50 10 C 20 30, 20 70, 50 90 C 80 70, 80 30, 50 10 Z M50 20 L50 88" stroke="currentColor" stroke-width="1" fill="currentColor"/></svg>
+  <svg class="l2" viewBox="0 0 100 100" fill="currentColor"><path d="M10 50 C 30 20, 70 20, 90 50 C 70 80, 30 80, 10 50 Z"/></svg>
+  <svg class="l3" viewBox="0 0 100 100" fill="currentColor"><path d="M50 5 C 25 25, 25 75, 50 95 C 75 75, 75 25, 50 5 Z"/></svg>
+  <svg class="l4" viewBox="0 0 100 100" fill="currentColor"><path d="M50 10 C 20 30, 20 70, 50 90 C 80 70, 80 30, 50 10 Z"/></svg>
+</div>
+
+<!-- Toast notification -->
+<div class="toast" id="toast">
+  <span class="material-icons-round">wifi_off</span>
+  <span id="toastMsg">Backend offline — sensor tidak tersedia</span>
+</div>
+
+<div class="wrap">
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="brand">
+      <div class="brand-mark"><span class="material-icons-round">eco</span></div>
+      <div>
+        <h1>Miniatur Smart Home</h1>
+        <div class="sub">
+          <span class="live-dot" id="liveDot"></span>
+          Monitor &amp; kontrol rumah, tenang &amp; harmonis
+          <span class="offline-badge" id="offlineBadge">
+            <span class="material-icons-round">cloud_off</span>Sensor Offline
+          </span>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px">
+      <div class="clock">
+        <div class="time" id="clockTime">--:--:--</div>
+        <div class="date" id="clockDate">—</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+        <span style="font-size:12px;color:var(--ink-soft);font-weight:600" id="userLabel"></span>
+        <button onclick="doLogout()" style="display:flex;align-items:center;gap:4px;padding:6px 12px;border:1.5px solid var(--line-strong);border-radius:8px;background:transparent;font-family:inherit;font-size:12px;font-weight:600;color:var(--ink-soft);cursor:pointer">
+          <span class="material-icons-round" style="font-size:14px">logout</span>Keluar
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- SENSORS -->
+  <section class="section">
+    <div class="section-head">
+      <h2 class="section-title">
+        <span class="ic"><span class="material-icons-round">sensors</span></span>
+        Status Sensor
+      </h2>
+      <div class="section-meta" id="sensorMeta">Menghubungkan...</div>
+    </div>
+    <div class="sensor-grid">
+      <div class="sensor tone-sun" style="animation-delay:.05s">
+        <div class="sensor-head">
+          <div class="sensor-icon"><span class="material-icons-round">thermostat</span></div>
+          <span class="sensor-name">Suhu</span>
+        </div>
+        <div class="sensor-value"><span id="vSuhu">--</span><span class="unit">°C</span></div>
+        <div class="sparkbar"><span id="bSuhu"></span></div>
+      </div>
+      <div class="sensor tone-sky" style="animation-delay:.1s">
+        <div class="sensor-head">
+          <div class="sensor-icon"><span class="material-icons-round">water_drop</span></div>
+          <span class="sensor-name">Kelembaban</span>
+        </div>
+        <div class="sensor-value"><span id="vHum">--</span><span class="unit">%</span></div>
+        <div class="sparkbar"><span id="bHum"></span></div>
+      </div>
+      <div class="sensor tone-leaf" id="sGas" style="animation-delay:.15s">
+        <div class="sensor-head">
+          <div class="sensor-icon"><span class="material-icons-round">gas_meter</span></div>
+          <span class="sensor-name">Gas MQ-2</span>
+        </div>
+        <div class="sensor-value" style="font-size:22px"><span id="vGasV">--</span><span class="unit">ppm</span></div>
+        <div class="sensor-status status-ok" id="vGas">
+          <span class="material-icons-round">check_circle</span><span class="lbl">Aman</span>
+        </div>
+      </div>
+      <div class="sensor tone-leaf" id="sFire" style="animation-delay:.2s">
+        <div class="sensor-head">
+          <div class="sensor-icon"><span class="material-icons-round">local_fire_department</span></div>
+          <span class="sensor-name">Api KY-026</span>
+        </div>
+        <div class="sensor-value" style="font-size:22px">Deteksi</div>
+        <div class="sensor-status status-ok" id="vFire">
+          <span class="material-icons-round">check_circle</span><span class="lbl">Aman</span>
+        </div>
+      </div>
+      <div class="sensor tone-sky" id="sRain" style="animation-delay:.25s">
+        <div class="sensor-head">
+          <div class="sensor-icon"><span class="material-icons-round">rainy</span></div>
+          <span class="sensor-name">Hujan</span>
+        </div>
+        <div class="sensor-value" style="font-size:22px" id="vRain">--</div>
+        <div class="sensor-status status-info" id="vRainSub">
+          <span class="material-icons-round">wb_sunny</span><span class="lbl">--</span>
+        </div>
+      </div>
+      <div class="sensor tone-leaf" id="sSoil" style="animation-delay:.3s">
+        <div class="sensor-head">
+          <div class="sensor-icon"><span class="material-icons-round">grass</span></div>
+          <span class="sensor-name">Kelembaban Tanah</span>
+        </div>
+        <div class="sensor-value" style="font-size:22px" id="vSoil">--</div>
+        <div class="sparkbar"><span id="bSoil"></span></div>
+      </div>
+      <div class="sensor tone-sun" style="animation-delay:.35s">
+        <div class="sensor-head">
+          <div class="sensor-icon"><span class="material-icons-round">battery_charging_full</span></div>
+          <span class="sensor-name">Tegangan Baterai</span>
+        </div>
+        <div class="sensor-value"><span id="vBat">--</span><span class="unit">V</span></div>
+        <div class="sparkbar"><span id="bBat"></span></div>
+      </div>
+      <div class="sensor tone-sun" id="sCahaya" style="animation-delay:.38s">
+        <div class="sensor-head">
+          <div class="sensor-icon"><span class="material-icons-round">light_mode</span></div>
+          <span class="sensor-name">Cahaya</span>
+        </div>
+        <div class="sensor-value"><span id="vCahaya">--</span><span class="unit">%</span></div>
+        <div class="sensor-status status-ok" id="vCahayaStatus">
+          <span class="material-icons-round">wb_sunny</span><span class="lbl">--</span>
+        </div>
+      </div>
+      <div class="sensor tone-leaf" id="sPir" style="animation-delay:.4s">
+        <div class="sensor-head">
+          <div class="sensor-icon"><span class="material-icons-round">directions_run</span></div>
+          <span class="sensor-name">PIR Gerak</span>
+        </div>
+        <div class="sensor-value" style="font-size:22px" id="vPir">--</div>
+        <div class="sensor-status status-info" id="vPirSub">
+          <span class="material-icons-round">nightlight</span><span class="lbl">--</span>
+        </div>
+      </div>
+      <div class="sensor tone-sky" style="animation-delay:.45s">
+        <div class="sensor-head">
+          <div class="sensor-icon"><span class="material-icons-round">badge</span></div>
+          <span class="sensor-name">Kartu RFID</span>
+        </div>
+        <div class="sensor-value" style="font-size:20px;font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;letter-spacing:0.5px" id="vRfid">—</div>
+        <div class="sensor-status status-info" id="vRfidSub">
+          <span class="material-icons-round">hourglass_empty</span><span class="lbl">Menunggu</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CHARTS -->
+  <section class="section">
+    <div class="section-head">
+      <h2 class="section-title">
+        <span class="ic"><span class="material-icons-round">show_chart</span></span>
+        Grafik Sensor
+      </h2>
+      <div class="section-meta">20 titik data terakhir</div>
+    </div>
+    <div class="charts">
+      <div class="chart-card">
+        <div class="head">
+          <span class="name">Suhu</span>
+          <span class="now" id="cNowSuhu" style="color:#b8842b">--°C</span>
+        </div>
+        <div class="delta">Rata-rata harian terjaga</div>
+        <div class="chart-wrap"><canvas id="chartSuhu"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="head">
+          <span class="name">Kelembaban</span>
+          <span class="now" id="cNowHum" style="color:#4d7e92">--%</span>
+        </div>
+        <div class="delta">Udara segar &amp; sehat</div>
+        <div class="chart-wrap"><canvas id="chartHum"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="head">
+          <span class="name">Tegangan Baterai</span>
+          <span class="now" id="cNowBat" style="color:#4f7d52">--V</span>
+        </div>
+        <div class="delta">Daya tersimpan baik</div>
+        <div class="chart-wrap"><canvas id="chartBat"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ACTUATORS -->
+  <section class="section">
+    <div class="section-head">
+      <h2 class="section-title">
+        <span class="ic"><span class="material-icons-round">tune</span></span>
+        Kontrol Aktuator
+      </h2>
+      <div class="section-meta">Sentuh kartu untuk mengubah</div>
+    </div>
+    <div class="actuators">
+      <div class="actuator off" data-key="pompa" data-cmd-on="ON" data-cmd-off="OFF" data-on="Menyala" data-off="Mati">
+        <div class="actuator-top">
+          <div class="actuator-icon"><span class="material-icons-round">water_drop</span></div>
+          <div class="toggle"></div>
+        </div>
+        <div class="actuator-name">Pompa Air</div>
+        <div class="actuator-desc">Mengalirkan air ke taman</div>
+        <div class="actuator-state">
+          <span class="state-label">Status</span>
+          <span class="state-value">Mati</span>
+        </div>
+      </div>
+      <div class="actuator off" data-key="lampu" data-cmd-on="ON" data-cmd-off="OFF" data-on="Menyala" data-off="Mati">
+        <div class="actuator-top">
+          <div class="actuator-icon"><span class="material-icons-round">lightbulb</span></div>
+          <div class="toggle"></div>
+        </div>
+        <div class="actuator-name">Lampu Teras</div>
+        <div class="actuator-desc">Penerangan halaman rumah</div>
+        <div class="actuator-state">
+          <span class="state-label">Status</span>
+          <span class="state-value">Mati</span>
+        </div>
+        <div style="margin-top:8px">
+          <span id="lampuModeLabel" style="font-size:12px;color:var(--ink-soft);margin-right:8px">Mode: AUTO</span>
+          <button id="btnLampuAuto" onclick="event.stopPropagation();setAutoMode()"
+            style="font-size:11px;padding:3px 10px;border-radius:20px;border:1.5px solid var(--leaf);
+                   background:var(--leaf-bg);color:var(--leaf-deep);cursor:pointer;font-weight:600;display:none">
+            Auto
+          </button>
+        </div>
+      </div>
+      <div class="actuator off" data-key="buzzer" data-cmd-on="ON" data-cmd-off="OFF" data-on="Berbunyi" data-off="Senyap">
+        <div class="actuator-top">
+          <div class="actuator-icon"><span class="material-icons-round">notifications_active</span></div>
+          <div class="toggle"></div>
+        </div>
+        <div class="actuator-name">Buzzer</div>
+        <div class="actuator-desc">Penanda peringatan</div>
+        <div class="actuator-state">
+          <span class="state-label">Status</span>
+          <span class="state-value">Senyap</span>
+        </div>
+      </div>
+      <div class="actuator off" data-key="servo" data-cmd-on="BUKA" data-cmd-off="TUTUP" data-on="Terbuka" data-off="Tertutup">
+        <div class="actuator-top">
+          <div class="actuator-icon"><span class="material-icons-round">door_front</span></div>
+          <div class="toggle"></div>
+        </div>
+        <div class="actuator-name">Servo Pintu</div>
+        <div class="actuator-desc">Akses pagar otomatis</div>
+        <div class="actuator-state">
+          <span class="state-label">Status</span>
+          <span class="state-value">Tertutup</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CAMERA -->
+  <section class="section">
+    <div class="section-head">
+      <h2 class="section-title">
+        <span class="ic"><span class="material-icons-round">videocam</span></span>
+        Sistem Kamera AI
+      </h2>
+    </div>
+    <div class="tabs">
+      <button class="tab active" data-tab="webcam">
+        <span class="material-icons-round">laptop</span>Webcam Laptop
+      </button>
+      <button class="tab" data-tab="esp">
+        <span class="material-icons-round">memory</span>ESP32-CAM
+      </button>
+    </div>
+    <div class="camera-section">
+      <div>
+        <div class="camera-stage" id="camStage">
+          <video id="camVideo" autoplay playsinline
+            style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:18px;opacity:0;z-index:0;"></video>
+          <img id="espImg" alt="ESP32-CAM"
+            style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:18px;display:none;z-index:0;">
+          <canvas id="camCanvas" width="320" height="240" style="display:none;"></canvas>
+          <div class="scanline"></div>
+          <div class="rec"><span class="dot"></span>LIVE</div>
+          <div class="bbox" id="bbox" data-label="OBJEK" style="left:30%;top:30%;width:35%;height:40%;"></div>
+          <div class="placeholder">
+            <span class="material-icons-round">videocam_off</span>
+            <div class="ph-title">Kamera belum aktif</div>
+            <div class="ph-sub">Tekan "Mulai Kamera" untuk memulai pemantauan</div>
+          </div>
+        </div>
+        <div class="cam-controls">
+          <button class="btn btn-primary" id="camStart">
+            <span class="material-icons-round">play_arrow</span>Mulai Kamera
+          </button>
+          <button class="btn btn-danger" id="camStop">
+            <span class="material-icons-round">stop</span>Berhenti
+          </button>
+        </div>
+      </div>
+      <div class="cam-info">
+        <div class="info-row">
+          <span class="k"><span class="material-icons-round">circle</span>Status</span>
+          <span class="v muted" id="iStatus">Belum Aktif</span>
+        </div>
+        <div class="info-row">
+          <span class="k"><span class="material-icons-round">cable</span>Sumber</span>
+          <span class="v" id="iSource">Webcam Laptop</span>
+        </div>
+        <div class="info-row">
+          <span class="k"><span class="material-icons-round">smart_toy</span>Mode AI</span>
+          <span class="v" id="iAiMode" style="font-size:13px;color:var(--leaf-deep)">Browser (TF.js)</span>
+        </div>
+        <div class="info-row">
+          <span class="k"><span class="material-icons-round">visibility</span>Hasil Deteksi</span>
+          <span class="v muted" id="iResult">—</span>
+        </div>
+        <div class="conf-wrap">
+          <div class="top">
+            <span class="k"><span class="material-icons-round">analytics</span>Confidence</span>
+            <span class="v" id="iConf" style="font-size:15px">0%</span>
+          </div>
+          <div class="conf-bar"><span id="iConfBar"></span></div>
+        </div>
+        <div class="info-row">
+          <span class="k"><span class="material-icons-round">notifications</span>Buzzer</span>
+          <span class="v muted" id="iBuzz">Senyap</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">— harmoni teknologi &amp; alam, di rumah Anda —</div>
+  <div class="foot" style="margin-top:4px;font-size:0.75rem;opacity:0.5">&copy; 2026 Zacky Ubaidillah Achyar</div>
+
+</div>
+
+<script>
+/* ===== AUTH ===== */
+(function() {
+  if (!localStorage.getItem('smarthome_token')) {
+    window.location.replace('login.html');
+  }
+})();
+
+function getToken() { return localStorage.getItem('smarthome_token') || ''; }
+
+function authFetch(url, options = {}) {
+  options.headers = options.headers || {};
+  options.headers['Authorization'] = 'Bearer ' + getToken();
+  options.headers['ngrok-skip-browser-warning'] = 'true';
+  return fetch(url, options).catch(() => new Response('{}', {status: 503}));
+}
+
+async function doLogout() {
+  try { await authFetch(API_BASE + '/api/logout', { method: 'POST' }); } catch {}
+  localStorage.removeItem('smarthome_token');
+  localStorage.removeItem('smarthome_user');
+  window.location.replace('login.html');
+}
+
+/* ===== CONFIG ===== */
+const API_BASE = (typeof window !== 'undefined' && window.SMARTHOME_API_URL) ? window.SMARTHOME_API_URL.replace(/\/$/, '') : '';
+
+/* ===== CLOCK ===== */
+const HARI = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+const BLN  = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+function pad(n){ return String(n).padStart(2,'0'); }
+// Tampilkan username di header
+const _ul = document.getElementById('userLabel');
+if (_ul) _ul.textContent = localStorage.getItem('smarthome_user') || '';
+
+function tickClock(){
+  const d = new Date();
+  document.getElementById('clockTime').textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  document.getElementById('clockDate').textContent = `${HARI[d.getDay()]}, ${d.getDate()} ${BLN[d.getMonth()]} ${d.getFullYear()}`;
+}
+tickClock(); setInterval(tickClock, 1000);
+
+/* ===== BACKEND STATUS ===== */
+let backendOnline = null;
+let toastTimer = null;
+
+function setBackendStatus(online) {
+  if (backendOnline === online) return;
+  backendOnline = online;
+  const dot   = document.getElementById('liveDot');
+  const badge = document.getElementById('offlineBadge');
+  const meta  = document.getElementById('sensorMeta');
+  if (online) {
+    dot.classList.remove('offline');
+    badge.style.display = 'none';
+    meta.textContent = 'Diperbarui setiap 3 detik';
+    showToast('Backend terhubung — sensor aktif', 'check_circle', 2500);
+  } else {
+    dot.classList.add('offline');
+    badge.style.display = 'inline-flex';
+    meta.textContent = 'Backend offline — menampilkan data terakhir';
+    showToast('Backend offline — sensor tidak tersedia', 'wifi_off', 4000);
+  }
+}
+
+function showToast(msg, icon, duration) {
+  const t = document.getElementById('toast');
+  const m = document.getElementById('toastMsg');
+  t.querySelector('.material-icons-round').textContent = icon || 'info';
+  m.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), duration || 3000);
+}
+
+/* ===== AI MODEL (TF.js — berjalan di browser, tanpa server) ===== */
+let aiModel = null;
+
+async function loadAIModel() {
+  if (typeof tmImage === 'undefined') return;
+  try {
+    aiModel = await tmImage.load('model/model.json', 'model/metadata.json');
+    document.getElementById('iAiMode').textContent = 'Browser (TF.js) ✓';
+    document.getElementById('iAiMode').style.color = 'var(--leaf-deep)';
+  } catch(e) {
+    console.warn('Model AI tidak bisa dimuat:', e);
+    document.getElementById('iAiMode').textContent = 'Model tidak ditemukan';
+    document.getElementById('iAiMode').style.color = 'var(--terracotta)';
+  }
+}
+loadAIModel();
+
+/* ===== CHARTS ===== */
+function makeChart(canvasId, color) {
+  return new Chart(document.getElementById(canvasId), {
+    type: 'line',
+    data: { labels: [], datasets: [{
+      data: [], borderColor: color,
+      backgroundColor: color + '28',
+      borderWidth: 2.5, tension: 0.4,
+      pointRadius: 0, pointHoverRadius: 4,
+      fill: true,
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 700, easing: 'easeOutCubic' },
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: {
+        x: { display: false },
+        y: {
+          grid: { color: 'rgba(42,58,46,0.06)' },
+          border: { display: false },
+          ticks: { color: '#8a9a8d', font: { family: 'Plus Jakarta Sans', size: 11 } }
+        }
+      }
+    }
+  });
+}
+
+const chartSuhu = makeChart('chartSuhu', '#e9b872');
+const chartHum  = makeChart('chartHum',  '#8fb8c9');
+const chartBat  = makeChart('chartBat',  '#6a9a6b');
+
+function pushChartPoint(s, h, b) {
+  const t = new Date();
+  const lbl = `${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`;
+  for (const [chart, val] of [[chartSuhu, s],[chartHum, h],[chartBat, b]]) {
+    chart.data.labels.push(lbl);
+    chart.data.datasets[0].data.push(val);
+    if (chart.data.labels.length > 20) {
+      chart.data.labels.shift();
+      chart.data.datasets[0].data.shift();
+    }
+    chart.update();
+  }
+  document.getElementById('cNowSuhu').textContent = s.toFixed(1) + '°C';
+  document.getElementById('cNowHum').textContent  = h.toFixed(0) + '%';
+  document.getElementById('cNowBat').textContent  = b.toFixed(2) + 'V';
+}
+
+/* ===== HELPERS ===== */
+function setStatus(el, cls, icon, label) {
+  el.className = 'sensor-status ' + cls;
+  el.innerHTML = `<span class="material-icons-round">${icon}</span><span class="lbl">${label}</span>`;
+}
+
+/* ===== SENSORS ===== */
+function updateSensors() {
+  authFetch(API_BASE +'/api/sensor')
+  .then(r => r.json())
+  .then(data => {
+    setBackendStatus(true);
+
+    const suhu = parseFloat(data.suhu);
+    const hum  = parseFloat(data.kelembaban);
+    const bat  = parseFloat(data.tegangan_baterai);
+
+    if (!isNaN(suhu)) {
+      document.getElementById('vSuhu').textContent = suhu.toFixed(1);
+      document.getElementById('bSuhu').style.width = Math.max(0, Math.min(100, (suhu-25)/10*100)) + '%';
+    }
+    if (!isNaN(hum)) {
+      document.getElementById('vHum').textContent = hum.toFixed(0);
+      document.getElementById('bHum').style.width = Math.max(0, Math.min(100, hum)) + '%';
+    }
+    if (!isNaN(bat)) {
+      document.getElementById('vBat').textContent = bat.toFixed(2);
+      document.getElementById('bBat').style.width = Math.max(0, Math.min(100, (bat-3.5)/0.7*100)) + '%';
+    }
+
+    const gasRaw   = String(data.gas || '');
+    const gasPpm   = parseFloat(gasRaw);
+    const gasBahaya = gasRaw === 'bahaya' || (!isNaN(gasPpm) && gasPpm > 700);
+    document.getElementById('vGasV').textContent = isNaN(gasPpm) ? gasRaw : gasPpm;
+    setStatus(document.getElementById('vGas'),
+      gasBahaya ? 'status-bad' : 'status-ok',
+      gasBahaya ? 'warning' : 'check_circle',
+      gasBahaya ? 'Bahaya' : 'Aman');
+    document.getElementById('sGas').classList.toggle('alert', gasBahaya);
+
+    const fireRaw = String(data.api || '');
+    const fire = fireRaw === 'bahaya' || fireRaw === 'terdeteksi';
+    setStatus(document.getElementById('vFire'),
+      fire ? 'status-bad' : 'status-ok',
+      fire ? 'warning' : 'check_circle',
+      fire ? 'Terdeteksi' : 'Aman');
+    document.getElementById('sFire').classList.toggle('alert', fire);
+
+    const rainRaw = String(data.hujan || '');
+    const rain = rainRaw !== 'tidak hujan' && rainRaw !== '-' && rainRaw !== '';
+    document.getElementById('vRain').textContent = rain ? 'Hujan' : 'Tidak hujan';
+    setStatus(document.getElementById('vRainSub'),
+      'status-info',
+      rain ? 'umbrella' : 'wb_sunny',
+      rain ? 'Basah' : 'Cerah');
+
+    const soilRaw = String(data.tanah || 'kering').toLowerCase();
+    const SOIL_DISPLAY = {kering:'Kering', lembab:'Lembab', basah:'Basah'};
+    const SOIL_MAP     = {kering:25, lembab:60, basah:90};
+    document.getElementById('vSoil').textContent = SOIL_DISPLAY[soilRaw] || 'Kering';
+    document.getElementById('bSoil').style.width = (SOIL_MAP[soilRaw] || 25) + '%';
+
+    const pir = String(data.pir || '') === 'ada gerak';
+    document.getElementById('vPir').textContent = pir ? 'Ada gerak' : 'Tenang';
+    setStatus(document.getElementById('vPirSub'),
+      pir ? 'status-warn' : 'status-info',
+      pir ? 'visibility' : 'nightlight',
+      pir ? 'Aktif' : 'Standby');
+
+    const rfid = String(data.rfid || '-');
+    document.getElementById('vRfid').textContent = rfid === '-' ? '—' : rfid;
+    setStatus(document.getElementById('vRfidSub'),
+      rfid === '-' ? 'status-info' : 'status-ok',
+      rfid === '-' ? 'hourglass_empty' : 'verified',
+      rfid === '-' ? 'Menunggu' : 'Terbaca');
+
+    const cahaya = parseFloat(data.cahaya);
+    if (!isNaN(cahaya)) {
+      document.getElementById('vCahaya').textContent = cahaya.toFixed(0);
+      const gelap = cahaya < 50;
+      setStatus(document.getElementById('vCahayaStatus'),
+        gelap ? 'status-warn' : 'status-ok',
+        gelap ? 'nights_stay' : 'wb_sunny',
+        gelap ? 'Gelap' : 'Terang');
+      document.getElementById('sCahaya').classList.toggle('alert', gelap);
+    }
+
+    const lampuMode = String(data.lampu_mode || 'AUTO');
+    const isAuto = lampuMode === 'AUTO';
+    document.getElementById('lampuModeLabel').textContent = 'Mode: ' + lampuMode;
+    document.getElementById('btnLampuAuto').style.display = isAuto ? 'none' : 'inline-block';
+
+    const lampuNyala = String(data.lampu_nyala || '0') === '1';
+    if (state.lampu !== lampuNyala) {
+      state.lampu = lampuNyala;
+      renderActuators();
+    }
+
+    if (!isNaN(suhu) && !isNaN(hum) && !isNaN(bat)) pushChartPoint(suhu, hum, bat);
+  })
+  .catch(() => {
+    setBackendStatus(false);
+  });
+}
+
+/* ===== ACTUATORS ===== */
+const state = JSON.parse(localStorage.getItem('smartHomeStateV2') || '{}');
+state.pompa  = !!state.pompa;
+state.lampu  = !!state.lampu;
+state.buzzer = !!state.buzzer;
+state.servo  = !!state.servo;
+
+function renderActuators() {
+  document.querySelectorAll('.actuator').forEach(el => {
+    const k  = el.dataset.key;
+    const on = !!state[k];
+    el.classList.toggle('on', on);
+    el.classList.toggle('off', !on);
+    el.querySelector('.state-value').textContent = on ? el.dataset.on : el.dataset.off;
+  });
+  localStorage.setItem('smartHomeStateV2', JSON.stringify(state));
+}
+
+document.querySelectorAll('.actuator').forEach(el => {
+  el.addEventListener('click', () => {
+    const k = el.dataset.key;
+    state[k] = !state[k];
+    renderActuators();
+    const cmd = state[k] ? el.dataset.cmdOn : el.dataset.cmdOff;
+    authFetch(API_BASE +`/api/aktuator/${k}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({status: cmd})
+    }).catch(() => {
+      if (!backendOnline) showToast('Backend offline — perintah tidak terkirim ke hardware', 'wifi_off', 3500);
+    });
+  });
+});
+renderActuators();
+
+function setAutoMode() {
+  authFetch(API_BASE +'/api/aktuator/lampu', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({status: 'AUTO'})
+  }).catch(() => {});
+}
+
+/* ===== CAMERA ===== */
+const camStage = document.getElementById('camStage');
+let camActive = false, camTimer = null, camStream = null;
+let espTimer = null, activeTab = 'webcam';
+
+function resetCamInfo() {
+  const r = document.getElementById('iResult');
+  r.textContent = '—'; r.classList.add('muted'); r.classList.remove('alert');
+  document.getElementById('iConf').textContent = '0%';
+  document.getElementById('iConfBar').style.width = '0%';
+  document.getElementById('iConfBar').style.background = '#6a9a6b';
+  const buzz = document.getElementById('iBuzz');
+  buzz.textContent = 'Senyap'; buzz.classList.add('muted'); buzz.classList.remove('alert');
+}
+
+function updateCamInfo(hasil, confidence, buzzer) {
+  const label   = (hasil || 'unknown').toUpperCase();
+  const confStr = confidence || '0%';
+  const confNum = parseFloat(confStr);
+  const isBad   = buzzer === 'ON';
+
+  const bbox = document.getElementById('bbox');
+  bbox.dataset.label = label;
+  bbox.style.left   = (10 + Math.random()*40) + '%';
+  bbox.style.top    = (10 + Math.random()*30) + '%';
+  bbox.style.width  = (25 + Math.random()*30) + '%';
+  bbox.style.height = (30 + Math.random()*30) + '%';
+  bbox.classList.toggle('danger', isBad);
+
+  const r = document.getElementById('iResult');
+  r.textContent = label; r.classList.remove('muted');
+  r.classList.toggle('alert', isBad);
+
+  document.getElementById('iConf').textContent = confStr;
+  document.getElementById('iConfBar').style.width = (isNaN(confNum) ? 0 : confNum) + '%';
+  document.getElementById('iConfBar').style.background = isBad ? '#c97b63' : '#6a9a6b';
+
+  const buzz = document.getElementById('iBuzz');
+  buzz.textContent = isBad ? 'Berbunyi!' : 'Senyap';
+  buzz.classList.toggle('muted', !isBad);
+  buzz.classList.toggle('alert', isBad);
+}
+
+function startWebcam() {
+  if (camActive) return;
+  navigator.mediaDevices.getUserMedia({ video: {width:640, height:400}, audio: false })
+  .then(stream => {
+    camStream = stream;
+    camActive = true;
+    const video = document.getElementById('camVideo');
+    video.srcObject = stream;
+    video.style.opacity = '1';
+    video.style.display = '';
+    document.getElementById('espImg').style.display = 'none';
+    camStage.classList.add('active');
+    const iStatus = document.getElementById('iStatus');
+    iStatus.textContent = 'Aktif & memantau'; iStatus.classList.remove('muted');
+    camTimer = setInterval(detectFrame, 1500);
+  })
+  .catch(err => {
+    console.warn('Kamera error:', err);
+    const iStatus = document.getElementById('iStatus');
+    iStatus.textContent = 'Gagal akses kamera'; iStatus.classList.remove('muted'); iStatus.classList.add('alert');
+  });
+}
+
+function stopWebcam() {
+  camActive = false;
+  if (camStream)  { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+  if (camTimer)   { clearInterval(camTimer); camTimer = null; }
+  const video = document.getElementById('camVideo');
+  video.srcObject = null; video.style.opacity = '0';
+  camStage.classList.remove('active');
+  const iStatus = document.getElementById('iStatus');
+  iStatus.textContent = 'Belum Aktif'; iStatus.classList.add('muted'); iStatus.classList.remove('alert');
+  resetCamInfo();
+}
+
+async function detectFrame() {
+  if (!camActive) return;
+  const video  = document.getElementById('camVideo');
+  const canvas = document.getElementById('camCanvas');
+  canvas.width = 320; canvas.height = 240;
+  canvas.getContext('2d').drawImage(video, 0, 0, 320, 240);
+
+  if (aiModel) {
+    /* Inferensi langsung di browser menggunakan TF.js */
+    const prediction = await aiModel.predict(canvas);
+    const best = prediction.reduce((p, c) => p.probability > c.probability ? p : c);
+    const isBad = best.className.toLowerCase() === 'hewan';
+    const confStr = (best.probability * 100).toFixed(2) + '%';
+    updateCamInfo(best.className, confStr, isBad ? 'ON' : 'OFF');
+
+    /* Kirim ke backend jika online (untuk kontrol buzzer via MQTT) */
+    if (backendOnline) {
+      authFetch(API_BASE +'/api/ai', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({kamera: best.className})
+      }).catch(() => {});
+    }
+  } else {
+    /* Fallback: kirim frame ke backend server */
+    canvas.toBlob(blob => {
+      const fd = new FormData();
+      fd.append('gambar', blob, 'frame.jpg');
+      authFetch(API_BASE +'/api/ai-realtime', { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(d => updateCamInfo(d.hasil, d.confidence, d.buzzer))
+      .catch(() => {});
+    }, 'image/jpeg', 0.8);
+  }
+}
+
+/* ESP32-CAM */
+function startESP() {
+  stopWebcam();
+  const espImg = document.getElementById('espImg');
+  espImg.style.display = 'block';
+  document.getElementById('camVideo').style.display = 'none';
+  camStage.classList.add('active');
+  const iStatus = document.getElementById('iStatus');
+  iStatus.textContent = 'Menghubungkan...'; iStatus.classList.remove('muted');
+  updateESPStream(); checkESPStatus();
+  espTimer = setInterval(() => { updateESPStream(); checkESPStatus(); }, 1000);
+}
+
+function stopESP() {
+  if (espTimer) { clearInterval(espTimer); espTimer = null; }
+  document.getElementById('espImg').style.display = 'none';
+  document.getElementById('camVideo').style.display = '';
+  camStage.classList.remove('active');
+  const iStatus = document.getElementById('iStatus');
+  iStatus.textContent = 'Belum Aktif'; iStatus.classList.add('muted');
+  resetCamInfo();
+}
+
+function updateESPStream() {
+  const img = document.getElementById('espImg');
+  img.src = API_BASE + '/api/kamera/stream?' + Date.now();
+  img.onload  = () => camStage.classList.add('active');
+  img.onerror = () => camStage.classList.remove('active');
+}
+
+function checkESPStatus() {
+  authFetch(API_BASE +'/api/kamera/status')
+  .then(r => r.json())
+  .then(d => {
+    const iStatus = document.getElementById('iStatus');
+    iStatus.textContent = d.aktif ? 'ESP32-CAM terhubung' : 'Menunggu ESP32-CAM...';
+  })
+  .catch(() => {
+    document.getElementById('iStatus').textContent = 'Backend offline';
+  });
+}
+
+document.getElementById('camStart').addEventListener('click', () => {
+  if (activeTab === 'esp') startESP(); else startWebcam();
+});
+document.getElementById('camStop').addEventListener('click', () => {
+  if (activeTab === 'esp') stopESP(); else stopWebcam();
+});
+
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    activeTab = t.dataset.tab;
+    document.getElementById('iSource').textContent = activeTab === 'esp' ? 'ESP32-CAM' : 'Webcam Laptop';
+    if (activeTab === 'esp') stopWebcam(); else stopESP();
+  });
+});
+
+/* ===== BOOT ===== */
+updateSensors();
+setInterval(updateSensors, 3000);
+</script>
+</body>
+</html>

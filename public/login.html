@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Login — Miniatur Smart Home</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+<style>
+  :root {
+    --bg:         #f4f1ea;
+    --paper:      #ffffff;
+    --ink:        #2a3a2e;
+    --ink-soft:   #5b6c5e;
+    --muted:      #8a9a8d;
+    --leaf:       #6a9a6b;
+    --leaf-deep:  #4f7d52;
+    --leaf-bg:    #e6efe1;
+    --line:       rgba(42,58,46,0.08);
+    --shadow:     0 2px 4px rgba(42,58,46,0.04), 0 12px 32px rgba(42,58,46,0.08);
+    --red:        #c0392b;
+    --red-bg:     #fdf0ee;
+    --green:      #27ae60;
+    --green-bg:   #eafaf1;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    background: var(--bg);
+    background-image:
+      radial-gradient(900px 500px at 0% -10%, rgba(106,154,107,0.10), transparent 60%),
+      radial-gradient(800px 500px at 110% 100%, rgba(143,184,201,0.10), transparent 60%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .card {
+    background: var(--paper);
+    border-radius: 20px;
+    box-shadow: var(--shadow);
+    width: 100%;
+    max-width: 420px;
+    padding: 40px 36px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+  .brand-mark {
+    width: 44px; height: 44px;
+    background: var(--leaf-bg);
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--leaf-deep);
+  }
+  .brand-mark .material-icons-round { font-size: 22px; }
+  .brand h1 { font-size: 16px; font-weight: 700; color: var(--ink); }
+  .brand p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .tabs {
+    display: flex;
+    border-bottom: 2px solid var(--line);
+    margin-bottom: 28px;
+    gap: 4px;
+  }
+  .tab {
+    flex: 1;
+    padding: 10px;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: color .2s, border-color .2s;
+  }
+  .tab.active {
+    color: var(--leaf-deep);
+    border-bottom-color: var(--leaf-deep);
+  }
+
+  .form { display: none; flex-direction: column; gap: 16px; }
+  .form.active { display: flex; }
+
+  .field label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    margin-bottom: 6px;
+    letter-spacing: .3px;
+  }
+  .input-wrap {
+    display: flex;
+    align-items: center;
+    border: 1.5px solid var(--line);
+    border-radius: 10px;
+    background: var(--bg);
+    transition: border-color .2s;
+  }
+  .input-wrap:focus-within { border-color: var(--leaf); }
+  .input-wrap .material-icons-round {
+    padding: 0 10px 0 12px;
+    color: var(--muted);
+    font-size: 18px;
+  }
+  .input-wrap input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    padding: 11px 12px 11px 0;
+    font-family: inherit;
+    font-size: 14px;
+    color: var(--ink);
+    outline: none;
+  }
+  .input-wrap input::placeholder { color: var(--muted); }
+
+  .btn {
+    padding: 13px;
+    background: var(--leaf);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background .2s;
+    margin-top: 4px;
+  }
+  .btn:hover { background: var(--leaf-deep); }
+  .btn:disabled { background: var(--muted); cursor: not-allowed; }
+
+  .alert {
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    display: none;
+    align-items: center;
+    gap: 8px;
+  }
+  .alert.error  { background: var(--red-bg);   color: var(--red);   display: flex; }
+  .alert.success{ background: var(--green-bg); color: var(--green); display: flex; }
+  .alert .material-icons-round { font-size: 16px; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="brand">
+    <div class="brand-mark"><span class="material-icons-round">eco</span></div>
+    <div>
+      <h1>Miniatur Smart Home</h1>
+      <p>Media Pembelajaran IoT</p>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('login')">Masuk</div>
+    <div class="tab" onclick="switchTab('register')">Daftar</div>
+  </div>
+
+  <!-- LOGIN FORM -->
+  <form class="form active" id="formLogin" onsubmit="doLogin(event)">
+    <div id="alertLogin" class="alert"></div>
+    <div class="field">
+      <label>Username</label>
+      <div class="input-wrap">
+        <span class="material-icons-round">person</span>
+        <input type="text" id="loginUser" placeholder="Masukkan username" autocomplete="username" required>
+      </div>
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <div class="input-wrap">
+        <span class="material-icons-round">lock</span>
+        <input type="password" id="loginPass" placeholder="Masukkan password" autocomplete="current-password" required>
+      </div>
+    </div>
+    <button type="submit" class="btn" id="btnLogin">Masuk</button>
+  </form>
+
+  <!-- REGISTER FORM -->
+  <form class="form" id="formRegister" onsubmit="doRegister(event)">
+    <div id="alertRegister" class="alert"></div>
+    <div class="field">
+      <label>Username</label>
+      <div class="input-wrap">
+        <span class="material-icons-round">person</span>
+        <input type="text" id="regUser" placeholder="Buat username" autocomplete="username" required>
+      </div>
+    </div>
+    <div class="field">
+      <label>Email</label>
+      <div class="input-wrap">
+        <span class="material-icons-round">email</span>
+        <input type="email" id="regEmail" placeholder="Masukkan email" autocomplete="email" required>
+      </div>
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <div class="input-wrap">
+        <span class="material-icons-round">lock</span>
+        <input type="password" id="regPass" placeholder="Minimal 6 karakter" autocomplete="new-password" required>
+      </div>
+    </div>
+    <div class="field">
+      <label>Konfirmasi Password</label>
+      <div class="input-wrap">
+        <span class="material-icons-round">lock_reset</span>
+        <input type="password" id="regPass2" placeholder="Ulangi password" autocomplete="new-password" required>
+      </div>
+    </div>
+    <button type="submit" class="btn" id="btnRegister">Daftar</button>
+  </form>
+</div>
+
+<script>
+// Redirect kalau sudah login
+if (localStorage.getItem('smarthome_token')) {
+  window.location.replace('index.html');
+}
+
+// Ambil daftar user dari localStorage
+function getUsers() {
+  try { return JSON.parse(localStorage.getItem('sh_users') || '[]'); } catch { return []; }
+}
+function saveUsers(users) {
+  localStorage.setItem('sh_users', JSON.stringify(users));
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((t, i) =>
+    t.classList.toggle('active', (i === 0) === (tab === 'login'))
+  );
+  document.getElementById('formLogin').classList.toggle('active', tab === 'login');
+  document.getElementById('formRegister').classList.toggle('active', tab === 'register');
+  showAlert('alertLogin', '');
+  showAlert('alertRegister', '');
+}
+
+function showAlert(id, msg, type = 'error') {
+  const el = document.getElementById(id);
+  el.className = 'alert' + (msg ? ' ' + type : '');
+  el.innerHTML = msg ? `<span class="material-icons-round">${type === 'error' ? 'error' : 'check_circle'}</span>${msg}` : '';
+}
+
+function doLogin(e) {
+  e.preventDefault();
+  const username = document.getElementById('loginUser').value.trim();
+  const password = document.getElementById('loginPass').value;
+  const users = getUsers();
+  const user = users.find(u => u.username === username && u.password === password);
+  if (!user) { showAlert('alertLogin', 'Username atau password salah'); return; }
+  localStorage.setItem('smarthome_token', 'local_' + Date.now());
+  localStorage.setItem('smarthome_user', username);
+  window.location.replace('index.html');
+}
+
+function doRegister(e) {
+  e.preventDefault();
+  const username = document.getElementById('regUser').value.trim();
+  const email    = document.getElementById('regEmail').value.trim();
+  const pass     = document.getElementById('regPass').value;
+  const pass2    = document.getElementById('regPass2').value;
+  if (pass !== pass2) { showAlert('alertRegister', 'Password tidak sama'); return; }
+  if (pass.length < 6) { showAlert('alertRegister', 'Password minimal 6 karakter'); return; }
+  const users = getUsers();
+  if (users.find(u => u.username === username)) {
+    showAlert('alertRegister', 'Username sudah digunakan'); return;
+  }
+  if (users.find(u => u.email === email)) {
+    showAlert('alertRegister', 'Email sudah digunakan'); return;
+  }
+  users.push({ username, email, password: pass });
+  saveUsers(users);
+  showAlert('alertRegister', 'Akun berhasil dibuat! Silakan masuk.', 'success');
+  setTimeout(() => {
+    switchTab('login');
+    document.getElementById('loginUser').value = username;
+  }, 1500);
+}
+</script>
+</body>
+</html>
