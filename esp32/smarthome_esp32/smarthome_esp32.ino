@@ -13,6 +13,7 @@
 
 #include <WiFi.h>
 #include <WiFiManager.h>
+#include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include <DHT.h>
 #include <SPI.h>
@@ -76,12 +77,16 @@
 #define SERVO_BUKA_DURASI  5000   // ms — pintu terbuka sebelum tutup otomatis
 #define RFID_TIMEOUT       8000   // ms — timeout tunggu response whitelist
 #define MQTT_RETRY_MS      5000   // ms — jeda retry koneksi MQTT
+#define MQTT_PORT          8883
+#define MQTT_USER          "replace-controller-user"
+#define MQTT_PASS          "replace-controller-password"
+#define TLS_ROOT_CA        ""  // tempel CA root PEM sebelum flash; jangan gunakan setInsecure()
 
 // ============================================================
 // OBJECTS
 // ============================================================
-WiFiClient   espClient;
-PubSubClient mqtt(espClient);
+WiFiClientSecure mqttClient;
+PubSubClient mqtt(mqttClient);
 DHT          dht(PIN_DHT, DHT22);
 MFRC522      rfid(PIN_RFID_SS, PIN_RFID_RST);
 Servo        servo1, servo2;
@@ -213,7 +218,7 @@ void mqttReconnect() {
     String clientId = "SmartHome-" + String((uint32_t)ESP.getEfuseMac(), HEX);
     Serial.printf("MQTT konek ke %s... ", mqttHost);
 
-    if (mqtt.connect(clientId.c_str())) {
+    if (mqtt.connect(clientId.c_str(), MQTT_USER, MQTT_PASS)) {
         Serial.println("OK!");
         mqtt.subscribe(T_AKT_POMPA);
         mqtt.subscribe(T_AKT_LAMPU1);
@@ -603,7 +608,8 @@ void setup() {
     WiFi.setAutoReconnect(true);
 
     // Setup MQTT
-    mqtt.setServer(mqttHost, 1883);
+    mqttClient.setCACert(TLS_ROOT_CA);
+    mqtt.setServer(mqttHost, MQTT_PORT);
     mqtt.setCallback(mqttCallback);
     mqtt.setKeepAlive(15);   // deteksi disconnect lebih cepat (default 60 terlalu lama)
     mqtt.setSocketTimeout(5);

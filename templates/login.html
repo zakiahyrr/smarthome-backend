@@ -81,6 +81,7 @@
     transition: color .2s, border-color .2s;
   }
   .tab.active { color: var(--leaf-deep); border-bottom-color: var(--leaf-deep); }
+  button.tab { border: none; background: transparent; font-family: inherit; }
   .form { display: none; flex-direction: column; gap: 16px; }
   .form.active { display: flex; }
   .field label {
@@ -151,9 +152,9 @@
     </div>
   </div>
 
-  <div class="tabs">
-    <div class="tab active" onclick="switchTab('login')">Masuk</div>
-    <div class="tab" onclick="switchTab('register')">Daftar</div>
+  <div class="tabs" role="tablist">
+    <button type="button" class="tab active" id="tabLogin" onclick="showForm('login')">Masuk</button>
+    <button type="button" class="tab" id="tabRegister" onclick="showForm('register')">Daftar</button>
   </div>
 
   <!-- LOGIN -->
@@ -176,60 +177,32 @@
     <button type="submit" class="btn" id="btnLogin">Masuk</button>
   </form>
 
-  <!-- REGISTER -->
+  <!-- REGISTRATION -->
   <form class="form" id="formRegister" onsubmit="doRegister(event)">
     <div id="alertRegister" class="alert"></div>
-    <div class="field">
-      <label>Username</label>
-      <div class="input-wrap">
-        <span class="material-icons-round">person</span>
-        <input type="text" id="regUser" placeholder="Buat username" autocomplete="username" required>
-      </div>
-    </div>
-    <div class="field">
-      <label>Email</label>
-      <div class="input-wrap">
-        <span class="material-icons-round">email</span>
-        <input type="email" id="regEmail" placeholder="Masukkan email" autocomplete="email" required>
-      </div>
-    </div>
-    <div class="field">
-      <label>Password</label>
-      <div class="input-wrap">
-        <span class="material-icons-round">lock</span>
-        <input type="password" id="regPass" placeholder="Minimal 6 karakter" autocomplete="new-password" required>
-      </div>
-    </div>
-    <div class="field">
-      <label>Konfirmasi Password</label>
-      <div class="input-wrap">
-        <span class="material-icons-round">lock_reset</span>
-        <input type="password" id="regPass2" placeholder="Ulangi password" autocomplete="new-password" required>
-      </div>
-    </div>
+    <div class="field"><label>Username</label><div class="input-wrap"><span class="material-icons-round">person</span><input type="text" id="registerUser" placeholder="Buat username" autocomplete="username" required></div></div>
+    <div class="field"><label>Email</label><div class="input-wrap"><span class="material-icons-round">email</span><input type="email" id="registerEmail" placeholder="nama.com" autocomplete="email" required></div></div>
+    <div class="field"><label>Password</label><div class="input-wrap"><span class="material-icons-round">lock</span><input type="password" id="registerPass" placeholder="Minimal 12 karakter" autocomplete="new-password" minlength="12" required></div></div>
+    <div class="field"><label>Konfirmasi password</label><div class="input-wrap"><span class="material-icons-round">lock</span><input type="password" id="registerPassConfirm" placeholder="Ulangi password" autocomplete="new-password" minlength="12" required></div></div>
     <button type="submit" class="btn" id="btnRegister">Daftar</button>
   </form>
+
 </div>
 
 <script>
-if (localStorage.getItem('smarthome_token')) {
-  window.location.replace('/dashboard');
-}
-
-function switchTab(tab) {
-  document.querySelectorAll('.tab').forEach((t, i) =>
-    t.classList.toggle('active', (i === 0) === (tab === 'login'))
-  );
-  document.getElementById('formLogin').classList.toggle('active', tab === 'login');
-  document.getElementById('formRegister').classList.toggle('active', tab === 'register');
-  showAlert('alertLogin', '');
-  showAlert('alertRegister', '');
-}
 
 function showAlert(id, msg, type = 'error') {
   const el = document.getElementById(id);
   el.className = 'alert' + (msg ? ' ' + type : '');
   el.innerHTML = msg ? `<span class="material-icons-round">${type === 'error' ? 'error' : 'check_circle'}</span>${msg}` : '';
+}
+
+function showForm(name) {
+  const isLogin = name === 'login';
+  document.getElementById('formLogin').classList.toggle('active', isLogin);
+  document.getElementById('formRegister').classList.toggle('active', !isLogin);
+  document.getElementById('tabLogin').classList.toggle('active', isLogin);
+  document.getElementById('tabRegister').classList.toggle('active', !isLogin);
 }
 
 async function doLogin(e) {
@@ -248,8 +221,6 @@ async function doLogin(e) {
     });
     const data = await res.json();
     if (!res.ok) { showAlert('alertLogin', data.error || 'Login gagal'); return; }
-    localStorage.setItem('smarthome_token', data.token);
-    localStorage.setItem('smarthome_user', data.username);
     window.location.replace('/dashboard');
   } catch {
     showAlert('alertLogin', 'Tidak dapat terhubung ke server');
@@ -258,28 +229,30 @@ async function doLogin(e) {
   }
 }
 
+
 async function doRegister(e) {
   e.preventDefault();
-  const pass  = document.getElementById('regPass').value;
-  const pass2 = document.getElementById('regPass2').value;
-  if (pass !== pass2) { showAlert('alertRegister', 'Password tidak sama'); return; }
+  const password = document.getElementById('registerPass').value;
+  if (password !== document.getElementById('registerPassConfirm').value) {
+    showAlert('alertRegister', 'Konfirmasi password tidak sama');
+    return;
+  }
   const btn = document.getElementById('btnRegister');
   btn.disabled = true; btn.textContent = 'Memproses...';
   showAlert('alertRegister', '');
   try {
+    const username = document.getElementById('registerUser').value.trim();
     const res = await fetch('/api/register', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        username: document.getElementById('regUser').value.trim(),
-        email:    document.getElementById('regEmail').value.trim(),
-        password: pass
-      })
+      body: JSON.stringify({username, email: document.getElementById('registerEmail').value.trim(), password})
     });
     const data = await res.json();
-    if (!res.ok) { showAlert('alertRegister', data.error || 'Registrasi gagal'); return; }
-    showAlert('alertRegister', 'Akun berhasil dibuat! Silakan masuk.', 'success');
-    setTimeout(() => switchTab('login'), 1500);
+    if (!res.ok) { showAlert('alertRegister', data.error || 'Pendaftaran gagal'); return; }
+    document.getElementById('loginUser').value = username;
+    document.getElementById('formRegister').reset();
+    showForm('login');
+    showAlert('alertLogin', 'Akun berhasil dibuat. Silakan masuk.', 'success');
   } catch {
     showAlert('alertRegister', 'Tidak dapat terhubung ke server');
   } finally {

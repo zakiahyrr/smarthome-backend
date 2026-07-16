@@ -1,0 +1,17 @@
+[Unit]
+Description=Smart Home Flask backend
+After=network-online.target mariadb.service mosquitto.service
+Wants=network-online.target
+[Service]
+Type=simple
+User=smarthome
+Group=smarthome
+WorkingDirectory=/opt/smarthome-backend
+EnvironmentFile=/etc/smarthome-backend.env
+ExecStart=/opt/smarthome-backend/.venv/bin/gunicorn app:app --bind 127.0.0.1:8000 --worker-class gevent --worker-connections 100 --workers 1 --timeout 120
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+[Install]
+WantedBy=multi-user.target

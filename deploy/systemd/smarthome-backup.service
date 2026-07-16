@@ -1,0 +1,6 @@
+[Unit]
+Description=Backup database Smart Home
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/smarthome-backend.env
+ExecStart=/bin/sh -c "install -d -m 0700 /var/backups/smarthome && mysqldump --single-transaction -u ${MYSQL_USER} -p${MYSQL_PASS} ${MYSQL_DB} | gzip -9 > /var/backups/smarthome/smarthome-$(date +%%F).sql.gz && find /var/backups/smarthome -type f -mtime +7 -delete"
