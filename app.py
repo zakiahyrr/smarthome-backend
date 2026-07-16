@@ -28,10 +28,11 @@ def require_auth(f):
         return f(*args, **kwargs)
     return decorated
 
-# ================= DATABASE MySQL =================
+# ================= DATABASE MySQL/MariaDB =================
 try:
-    import mysql.connector
-    from mysql.connector import Error as MySQLError
+    import pymysql
+    import pymysql.cursors
+    MySQLError = pymysql.MySQLError
 
     MYSQL_HOST = os.environ.get('MYSQL_HOST', 'localhost')
     MYSQL_PORT = int(os.environ.get('MYSQL_PORT', 3306))
@@ -41,10 +42,11 @@ try:
 
     def get_db():
         try:
-            return mysql.connector.connect(
+            return pymysql.connect(
                 host=MYSQL_HOST, port=MYSQL_PORT,
                 user=MYSQL_USER, password=MYSQL_PASS,
-                database=MYSQL_DB, connection_timeout=5
+                database=MYSQL_DB, connect_timeout=5,
+                autocommit=False
             )
         except Exception as e:
             print(f"[DB] Koneksi gagal: {e}")
@@ -356,7 +358,7 @@ def login():
     if not conn:
         return jsonify({'error': 'Koneksi database gagal'}), 500
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor(pymysql.cursors.DictCursor)
         cur.execute("SELECT * FROM users WHERE username=%s", (username,))
         user = cur.fetchone()
         if not user or not check_password_hash(user['password'], password):
@@ -576,7 +578,7 @@ def _query_history(table, limit=100):
     conn = get_db()
     if not conn: return []
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor(pymysql.cursors.DictCursor)
         cur.execute(f"SELECT * FROM {table} ORDER BY timestamp DESC LIMIT %s", (limit,))
         rows = cur.fetchall()
         for r in rows: r['timestamp'] = str(r['timestamp'])
