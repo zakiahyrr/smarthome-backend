@@ -1,0 +1,9 @@
+user smarthome_backend
+topic readwrite smarthome/#
+user smarthome_controller
+topic write smarthome/sensor/#
+topic write smarthome/status/aktuator/#
+topic read smarthome/aktuator/#
+user smarthome_camera
+topic read smarthome/sensor/pir
+topic write smarthome/kamera/ai

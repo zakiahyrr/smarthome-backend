@@ -1,32 +1,44 @@
-from flask import Flask, jsonify, render_template, request, send_file, Response, stream_with_context, redirect
+from flask import Flask, jsonify, render_template, request, send_file, Response, stream_with_context, redirect, session
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
-import os, datetime, json, queue, threading, time, secrets
+import os, datetime, json, queue, threading, time, hmac
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
-os.makedirs('uploads', exist_ok=True)
+app.secret_key = os.environ.get("SECRET_KEY")
+if not app.secret_key:
+    if os.environ.get("APP_ENV", "development") == "production":
+        raise RuntimeError("SECRET_KEY wajib diatur pada production")
+    app.secret_key = "development-only-secret-key"
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SECURE=os.environ.get("SESSION_COOKIE_SECURE", "false").lower() == "true",
+    SESSION_COOKIE_SAMESITE="Lax",
+    MAX_CONTENT_LENGTH=int(os.environ.get("MAX_UPLOAD_BYTES", 2 * 1024 * 1024)),
+)
+os.makedirs("uploads", exist_ok=True)
 
-# Token auth — {token: {username, expires}}
-tokens = {}
+ALLOW_REGISTRATION = os.environ.get("ALLOW_REGISTRATION", "false").lower() == "true"
 
 def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        token = None
-        auth = request.headers.get('Authorization', '')
-        if auth.startswith('Bearer '):
-            token = auth[7:]
-        if not token:
-            token = request.args.get('token')
-        if not token or token not in tokens:
-            return jsonify({'error': 'Unauthorized'}), 401
-        if datetime.datetime.now() > tokens[token]['expires']:
-            tokens.pop(token, None)
-            return jsonify({'error': 'Token expired, silakan login ulang'}), 401
+        if not session.get("username"):
+            return jsonify({"error": "Unauthorized"}), 401
         return f(*args, **kwargs)
     return decorated
+
+def require_device_token(env_name):
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            expected = os.environ.get(env_name, "")
+            supplied = request.headers.get("X-Device-Token", "")
+            if not expected or not supplied or not hmac.compare_digest(supplied, expected):
+                return jsonify({"error": "Unauthorized device"}), 401
+            return f(*args, **kwargs)
+        return decorated
+    return decorator
 
 # ================= DATABASE MySQL =================
 try:
@@ -52,15 +64,20 @@ try:
 
     def init_db():
         conn = get_db()
-        if not conn: return
+        if not conn:
+            return False
         cur = conn.cursor()
         cur.execute("""CREATE TABLE IF NOT EXISTS log_sensor (
             id INT AUTO_INCREMENT PRIMARY KEY,
             waktu DATETIME DEFAULT CURRENT_TIMESTAMP,
             suhu FLOAT, kelembaban FLOAT, gas FLOAT,
-            api VARCHAR(20), hujan VARCHAR(20), tanah FLOAT,
-            tegangan FLOAT, pir VARCHAR(20), rfid VARCHAR(50), kamera VARCHAR(20)
+            api VARCHAR(20), hujan VARCHAR(20), tanah VARCHAR(20),
+            tegangan FLOAT, pir VARCHAR(20), cahaya INT, rfid VARCHAR(50), kamera VARCHAR(20)
         )""")
+        cur.execute("SHOW COLUMNS FROM log_sensor LIKE 'cahaya'")
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE log_sensor ADD COLUMN cahaya INT DEFAULT 0 AFTER pir")
+        cur.execute("ALTER TABLE log_sensor MODIFY COLUMN tanah VARCHAR(20)")
         cur.execute("""CREATE TABLE IF NOT EXISTS rfid_log (
             id INT AUTO_INCREMENT PRIMARY KEY,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -83,8 +100,11 @@ try:
             password VARCHAR(255) NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )""")
-        conn.commit(); cur.close(); conn.close()
+        conn.commit()
+        cur.close()
+        conn.close()
         print("[DB] MySQL siap.")
+        return True
 
     def log_sensor():
         conn = get_db()
@@ -143,9 +163,9 @@ try:
             time.sleep(60)  # simpan ke DB tiap 60 detik
             log_sensor()
 
-    init_db()
-    threading.Thread(target=_sensor_log_loop, daemon=True).start()
-    DB_AKTIF = True
+    DB_AKTIF = init_db()
+    if DB_AKTIF:
+        threading.Thread(target=_sensor_log_loop, daemon=True).start()
 
 except Exception as e:
     print(f"[DB] MySQL tidak aktif: {e}")
@@ -153,6 +173,7 @@ except Exception as e:
     def log_rfid(*a): pass
     def log_ai(*a): pass
     def log_aktuator(*a): pass
+    def log_sensor(*a): pass
 
 # ================= STATE =================
 data_sensor = {
@@ -224,6 +245,8 @@ try:
     MQTT_PORT = int(os.environ.get('MQTT_PORT', 1883))
     MQTT_USER = os.environ.get('MQTT_USER', '')
     MQTT_PASS = os.environ.get('MQTT_PASS', '')
+    MQTT_TLS = os.environ.get("MQTT_TLS", "false").lower() == "true"
+    MQTT_CA_CERT = os.environ.get("MQTT_CA_CERT", "")
 
     def on_connect(client, _userdata, _flags, _rc, _props=None):
         print(f"MQTT terhubung ke {MQTT_HOST}:{MQTT_PORT}")
@@ -304,7 +327,9 @@ try:
 
     if MQTT_USER:
         mqtt_client.username_pw_set(MQTT_USER, MQTT_PASS)
-
+    if MQTT_TLS:
+        mqtt_client.tls_set(ca_certs=MQTT_CA_CERT or None)
+        mqtt_client.tls_insecure_set(False)
     mqtt_client.reconnect_delay_set(min_delay=1, max_delay=10)
     mqtt_client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
     mqtt_client.loop_start()
@@ -316,14 +341,16 @@ except Exception as e:
 # ================= AUTH =================
 @app.route('/api/register', methods=['POST'])
 def register():
+    if not ALLOW_REGISTRATION:
+        return jsonify({"error": "Registrasi publik dinonaktifkan"}), 403
     data = request.json or {}
     username = data.get('username', '').strip()
     email    = data.get('email', '').strip()
     password = data.get('password', '')
     if not username or not email or not password:
         return jsonify({'error': 'Semua field wajib diisi'}), 400
-    if len(password) < 6:
-        return jsonify({'error': 'Password minimal 6 karakter'}), 400
+    if len(password) < 12:
+        return jsonify({'error': 'Password minimal 12 karakter'}), 400
     if not DB_AKTIF:
         return jsonify({'error': 'Database tidak aktif'}), 500
     conn = get_db()
@@ -361,38 +388,35 @@ def login():
         user = cur.fetchone()
         if not user or not check_password_hash(user['password'], password):
             return jsonify({'error': 'Username atau password salah'}), 401
-        token = secrets.token_hex(32)
-        tokens[token] = {
-            'username': username,
-            'expires': datetime.datetime.now() + datetime.timedelta(hours=24)
-        }
-        return jsonify({'token': token, 'username': username})
+        session.clear()
+        session["username"] = username
+        return jsonify({"username": username})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:
         try: cur.close(); conn.close()
         except: pass
 
-@app.route('/api/logout', methods=['POST'])
+@app.route("/api/logout", methods=["POST"])
 @require_auth
 def logout():
-    auth = request.headers.get('Authorization', '')
-    if auth.startswith('Bearer '):
-        tokens.pop(auth[7:], None)
-    return jsonify({'status': 'ok'})
-
+    session.clear()
+    return jsonify({"status": "ok"})
 # ================= ROUTES =================
-@app.route('/')
+@app.route("/")
 def home():
-    return redirect('/login')
+    return redirect("/dashboard" if session.get("username") else "/login")
 
-@app.route('/login')
+@app.route("/login")
 def login_page():
-    return render_template('login.html')
+    if session.get("username"):
+        return redirect("/dashboard")
+    return render_template("login.html")
 
-@app.route('/dashboard')
+@app.route("/dashboard")
+@require_auth
 def dashboard():
-    return render_template('index.html')
+    return render_template("index.html", username=session["username"])
 
 # ================= SSE STREAM =================
 @app.route('/api/stream')
@@ -434,10 +458,12 @@ def get_sensor():
     return jsonify({**data_sensor, 'kamera': ai_result, 'kamera_confidence': ai_confidence})
 
 @app.route('/api/sensor/raw')
+@require_auth
 def get_sensor_raw():
     return jsonify({**data_sensor, 'kamera': ai_result})
 
 @app.route('/api/sensor/update', methods=['POST'])
+@require_device_token("CONTROLLER_API_TOKEN")
 def update_sensor():
     data = request.json or {}
     mapping = {
@@ -467,6 +493,7 @@ def kontrol_aktuator(nama):
     return jsonify({"pesan": f"{nama} → {status}"})
 
 @app.route('/api/aktuator/pending')
+@require_auth
 def get_aktuator_pending():
     return jsonify({})
 
@@ -494,6 +521,7 @@ def remove_whitelist(card_id):
 
 # ================= AI & KAMERA =================
 @app.route('/api/ai', methods=['POST'])
+@require_device_token("CAMERA_API_TOKEN")
 def receive_ai():
     global ai_result
     ai_result = (request.json or {}).get("kamera", "unknown")
@@ -523,12 +551,16 @@ def ai_realtime():
         return jsonify({"hasil": "Error", "confidence": "0%", "buzzer": "OFF"}), 500
 
 @app.route('/api/kamera/prediksi', methods=['POST'])
+@require_device_token("CAMERA_API_TOKEN")
 def kamera_prediksi():
     global ai_result, ai_confidence
     try:
-        if request.content_type == 'image/jpeg':
-            filepath = os.path.join('uploads', 'esp32cam.jpg')
-            with open(filepath, 'wb') as f: f.write(request.data)
+        if request.content_type == "image/jpeg":
+            if not request.data.startswith(b"\xff\xd8"):
+                return jsonify({"error": "Payload harus JPEG"}), 400
+            filepath = os.path.join("uploads", "esp32cam.jpg")
+            with open(filepath, "wb") as f:
+                f.write(request.data)
         elif 'gambar' in request.files:
             file = request.files['gambar']
             filepath = os.path.join('uploads', secure_filename(file.filename))
@@ -552,6 +584,7 @@ def kamera_prediksi():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/kamera/stream')
+@require_auth
 def kamera_stream():
     try:
         for fname in ['esp32cam.jpg', 'webcam.jpg', 'frame.jpg']:
@@ -572,20 +605,33 @@ def kamera_status():
 
 # ================= HISTORY (MySQL) =================
 def _query_history(table, limit=100):
-    if not DB_AKTIF: return []
+    columns = {
+        "log_sensor": "waktu",
+        "rfid_log": "timestamp",
+        "ai_log": "timestamp",
+        "aktuator_log": "timestamp",
+    }
+    order_column = columns.get(table)
+    if not DB_AKTIF or not order_column:
+        return []
     conn = get_db()
-    if not conn: return []
+    if not conn:
+        return []
+    cur = None
     try:
         cur = conn.cursor(dictionary=True)
-        cur.execute(f"SELECT * FROM {table} ORDER BY timestamp DESC LIMIT %s", (limit,))
+        cur.execute(f"SELECT * FROM {table} ORDER BY {order_column} DESC LIMIT %s", (limit,))
         rows = cur.fetchall()
-        for r in rows: r['timestamp'] = str(r['timestamp'])
+        for row in rows:
+            row[order_column] = str(row[order_column])
         return rows
     except Exception as e:
-        print(f"[DB] query error: {e}"); return []
+        print(f"[DB] query error: {e}")
+        return []
     finally:
-        try: cur.close(); conn.close()
-        except: pass
+        if cur:
+            cur.close()
+        conn.close()
 
 @app.route('/api/history/sensor')
 @require_auth

@@ -969,36 +969,20 @@
 
 <script>
 /* ===== AUTH ===== */
-(function() {
-  if (!localStorage.getItem('smarthome_token')) {
-    window.location.replace('/login');
-  }
-})();
-
-function getToken() { return localStorage.getItem('smarthome_token') || ''; }
-
 function authFetch(url, options = {}) {
-  options.headers = options.headers || {};
-  options.headers['Authorization'] = 'Bearer ' + getToken();
   return fetch(url, options).then(r => {
-    if (r.status === 401) {
-      localStorage.removeItem('smarthome_token');
-      localStorage.removeItem('smarthome_user');
-      window.location.replace('/login');
-    }
+    if (r.status === 401) window.location.replace("/login");
     return r;
   });
 }
 
 async function doLogout() {
-  try { await authFetch('/api/logout', { method: 'POST' }); } catch {}
-  localStorage.removeItem('smarthome_token');
-  localStorage.removeItem('smarthome_user');
-  window.location.replace('/login');
+  try { await authFetch("/api/logout", { method: "POST" }); } catch {}
+  window.location.replace("/login");
 }
 
-const _ul = document.getElementById('userLabel');
-if (_ul) _ul.textContent = localStorage.getItem('smarthome_user') || '';
+const _ul = document.getElementById("userLabel");
+if (_ul) _ul.textContent = {{ username|tojson }};
 
 /* ===== CLOCK ===== */
 const HARI = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
@@ -1472,7 +1456,7 @@ document.querySelectorAll('.tab').forEach(t => {
 });
 
 /* ===== BOOT — SSE real-time ===== */
-const evtSource = new EventSource('/api/stream?token=' + getToken());
+const evtSource = new EventSource('/api/stream');
 evtSource.onmessage = e => {
   try { updateSensors(JSON.parse(e.data)); } catch(_) {}
 };

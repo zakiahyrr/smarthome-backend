@@ -2,6 +2,8 @@ Flask==3.0.0
 Werkzeug==3.0.1
 paho-mqtt==2.1.0
 gunicorn==21.2.0
+gevent==24.2.1
 mysql-connector-python==8.3.0
 numpy==1.26.4
 Pillow==10.2.0
+ai-edge-litert==1.4.0

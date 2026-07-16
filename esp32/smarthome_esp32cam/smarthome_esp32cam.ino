@@ -22,6 +22,7 @@
 #include <WiFiManager.h>
 #include <PubSubClient.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include "esp_camera.h"
 #include <Preferences.h>
 
@@ -49,22 +50,25 @@
 // ============================================================
 // CONFIG
 // ============================================================
-#define FLASK_PORT       5000
-#define MQTT_PORT        1883
-#define COOLDOWN_MS      5000   // jeda minimum antar capture (ms)
+#define APP_HOST         "app.example.com"  // ganti dengan domain dashboard
+#define MQTT_PORT        8883
+#define MQTT_USER        "replace-camera-user"
+#define MQTT_PASS        "replace-camera-password"
+#define CAMERA_API_TOKEN "replace-camera-token"
+#define TLS_ROOT_CA      ""  // tempel CA root PEM sebelum flash; jangan gunakan setInsecure()
+#define COOLDOWN_MS      5000
 #define MQTT_RETRY_MS    5000
 
 // ============================================================
 // MQTT TOPICS
 // ============================================================
-#define T_PIR   "smarthome/sensor/pir"
+#define T_PIR "smarthome/sensor/pir"
 
-// ============================================================
 // OBJECTS
-// ============================================================
-WiFiClient   espClient;
-PubSubClient mqtt(espClient);
-Preferences  prefs;
+WiFiClientSecure mqttClient;
+WiFiClientSecure httpsClient;
+PubSubClient mqtt(mqttClient);
+Preferences prefs;
 
 // ============================================================
 // STATE
@@ -183,9 +187,12 @@ void captureAndSend() {
     Serial.printf("[CAM] Foto: %u bytes — kirim ke Flask...\n", jpgLen);
 
     HTTPClient http;
-    String url = String("http://") + serverHost + ":" + FLASK_PORT + "/api/kamera/prediksi";
-    http.begin(url);
+    String url = String("https://") + APP_HOST + "/api/kamera/prediksi";
+    httpsClient.setCACert(TLS_ROOT_CA);
+    http.begin(httpsClient, url);
     http.addHeader("Content-Type", "image/jpeg");
+    http.addHeader("X-Device-Token", CAMERA_API_TOKEN);
+
     http.setTimeout(8000);
 
     int code = http.POST(jpgBuf, jpgLen);
@@ -225,7 +232,7 @@ void mqttReconnect() {
     String clientId = "ESP32CAM-" + String((uint32_t)ESP.getEfuseMac(), HEX);
     Serial.printf("MQTT konek ke %s... ", serverHost);
 
-    if (mqtt.connect(clientId.c_str())) {
+    if (mqtt.connect(clientId.c_str(), MQTT_USER, MQTT_PASS)) {
         Serial.println("OK!");
         mqtt.subscribe(T_PIR);
         Serial.println("Subscribe: " T_PIR);
@@ -319,6 +326,7 @@ void setup() {
     }
 
     // Setup MQTT
+    mqttClient.setCACert(TLS_ROOT_CA);
     mqtt.setServer(serverHost, MQTT_PORT);
     mqtt.setCallback(mqttCallback);
     mqtt.setKeepAlive(60);

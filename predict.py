@@ -5,7 +5,7 @@ import os
 model_path = os.path.join('model', 'model.tflite')
 
 try:
-    import tflite_runtime.interpreter as tflite
+    from ai_edge_litert import interpreter as tflite
     interpreter = tflite.Interpreter(model_path=model_path)
 except ImportError:
     try:
