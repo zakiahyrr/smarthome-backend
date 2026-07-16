@@ -13,7 +13,7 @@
 
 #include <WiFi.h>
 #include <WiFiManager.h>
-#include <WiFiClientSecure.h>
+#include <WiFiClient.h>
 #include <PubSubClient.h>
 #include <DHT.h>
 #include <SPI.h>
@@ -77,15 +77,13 @@
 #define SERVO_BUKA_DURASI  5000   // ms — pintu terbuka sebelum tutup otomatis
 #define RFID_TIMEOUT       8000   // ms — timeout tunggu response whitelist
 #define MQTT_RETRY_MS      5000   // ms — jeda retry koneksi MQTT
-#define MQTT_PORT          8883
-#define MQTT_USER          "replace-controller-user"
-#define MQTT_PASS          "replace-controller-password"
-#define TLS_ROOT_CA        ""  // tempel CA root PEM sebelum flash; jangan gunakan setInsecure()
+#define MQTT_PORT          1883   // listener demo; autentikasi dan ACL tetap wajib
+#define MQTT_DEFAULT_HOST  "mqtt.rizkirmdan.my.id"
 
 // ============================================================
 // OBJECTS
 // ============================================================
-WiFiClientSecure mqttClient;
+WiFiClient mqttClient;
 PubSubClient mqtt(mqttClient);
 DHT          dht(PIN_DHT, DHT22);
 MFRC522      rfid(PIN_RFID_SS, PIN_RFID_RST);
@@ -128,9 +126,11 @@ unsigned long wifiLostAt    = 0;
 #define RFID_HEALTH_MS 20000  // cek RC522 tiap 20 detik
 
 // ============================================================
-// MQTT HOST (disimpan di flash)
+// MQTT CONFIG (disimpan di flash/NVS, tidak pernah di-commit)
 // ============================================================
-char mqttHost[40] = "";
+char mqttHost[40] = MQTT_DEFAULT_HOST;
+char mqttUser[40] = "";
+char mqttPass[80] = "";
 
 // ============================================================
 // MQTT TOPICS — PUBLISH (sensor)
@@ -215,10 +215,15 @@ void mqttReconnect() {
     if (millis() - lastMqttRetry < 2000) return;  // lebih cepat reconnect
     lastMqttRetry = millis();
 
+    if (strlen(mqttUser) == 0 || strlen(mqttPass) == 0) {
+        Serial.println("MQTT belum dikonfigurasi: isi username dan password melalui portal.");
+        return;
+    }
+
     String clientId = "SmartHome-" + String((uint32_t)ESP.getEfuseMac(), HEX);
     Serial.printf("MQTT konek ke %s... ", mqttHost);
 
-    if (mqtt.connect(clientId.c_str(), MQTT_USER, MQTT_PASS)) {
+    if (mqtt.connect(clientId.c_str(), mqttUser, mqttPass)) {
         Serial.println("OK!");
         mqtt.subscribe(T_AKT_POMPA);
         mqtt.subscribe(T_AKT_LAMPU1);
@@ -536,15 +541,19 @@ void setup() {
     rfid.PCD_DumpVersionToSerial();
     Serial.println("RFID: OK");
 
-    // Load MQTT host dari flash
+    // Load konfigurasi MQTT dari flash
     prefs.begin("config", false);
-    String savedHost = prefs.getString("mqtt_host", "");
-    savedHost.toCharArray(mqttHost, sizeof(mqttHost));
+    // Host broker mengikuti deployment saat ini; nilai lama di NVS tidak dipakai.
+    String savedUser = prefs.getString("mqtt_user", "");
+    savedUser.toCharArray(mqttUser, sizeof(mqttUser));
+    String savedPass = prefs.getString("mqtt_pass", "");
+    savedPass.toCharArray(mqttPass, sizeof(mqttPass));
     prefs.end();
 
-    // Tombol BOOT (GPIO 0) — tahan 3 detik saat power on untuk reset
+    // Tekan BOOT dalam 3 detik setelah sketch mulai untuk reset.
+    // Jangan tahan saat power-on karena GPIO 0 dapat masuk ke mode flashing.
     pinMode(0, INPUT_PULLUP);
-    Serial.println("Tahan BOOT 3 detik untuk reset WiFi, atau tunggu...");
+    Serial.println("Tekan BOOT untuk reset WiFi dan MQTT, atau tunggu...");
     bool bootDitekan = false;
     for (int i = 0; i < 30; i++) {
         if (digitalRead(0) == LOW) { bootDitekan = true; break; }
@@ -563,10 +572,14 @@ void setup() {
         ESP.restart();
     }
 
-    // WiFiManager — user isi WiFi + IP MQTT via browser
-    WiFiManagerParameter mqttParam("mqtt_host", "IP Komputer (MQTT Broker)", mqttHost, 40);
+    // WiFiManager — user isi WiFi dan kredensial broker melalui browser.
+    WiFiManagerParameter mqttParam("mqtt_host", "Host MQTT", mqttHost, sizeof(mqttHost));
+    WiFiManagerParameter mqttUserParam("mqtt_user", "Username MQTT", mqttUser, sizeof(mqttUser));
+    WiFiManagerParameter mqttPassParam("mqtt_pass", "Password MQTT", mqttPass, sizeof(mqttPass), " type=\"password\"");
     WiFiManager wm;
     wm.addParameter(&mqttParam);
+    wm.addParameter(&mqttUserParam);
+    wm.addParameter(&mqttPassParam);
     wm.setConfigPortalTimeout(180);
     wm.setConnectTimeout(30);
     wm.setDebugOutput(false);
@@ -579,36 +592,36 @@ void setup() {
     }
     Serial.printf("WiFi OK! IP ESP32: %s\n", WiFi.localIP().toString().c_str());
 
-    // Simpan MQTT host jika diisi/berubah
-    String newHost = String(mqttParam.getValue());
-    newHost.trim();
-    if (newHost.length() > 0 && newHost != String(mqttHost)) {
-        newHost.toCharArray(mqttHost, sizeof(mqttHost));
-        prefs.begin("config", false);
-        prefs.putString("mqtt_host", newHost);
-        prefs.end();
-        Serial.printf("MQTT host disimpan: %s\n", mqttHost);
+    // Perangkat lama belum punya kredensial di NVS: buka portal untuk migrasi.
+    if (strlen(mqttUser) == 0 || strlen(mqttPass) == 0) {
+        Serial.println("Isi kredensial MQTT di portal konfigurasi...");
+        wm.startConfigPortal("SmartHome-Setup");
     }
 
-    // Jika MQTT host masih kosong → paksa buka portal lagi
-    if (strlen(mqttHost) == 0) {
-        Serial.println("IP MQTT belum diisi — buka portal konfigurasi...");
-        wm.startConfigPortal("SmartHome-Setup");
-        String h = String(mqttParam.getValue()); h.trim();
-        if (h.length() > 0) {
-            h.toCharArray(mqttHost, sizeof(mqttHost));
-            prefs.begin("config", false);
-            prefs.putString("mqtt_host", mqttHost);
-            prefs.end();
-            Serial.printf("MQTT host disimpan: %s\n", mqttHost);
-        }
+    // Simpan konfigurasi MQTT jika diisi/berubah.
+    String newHost = String(mqttParam.getValue());
+    newHost.trim();
+    if (newHost.length() == 0) newHost = MQTT_DEFAULT_HOST;
+    String newUser = String(mqttUserParam.getValue());
+    newUser.trim();
+    String newPass = String(mqttPassParam.getValue());
+    newPass.trim();
+    if (newHost != String(mqttHost) || newUser != String(mqttUser) || newPass != String(mqttPass)) {
+        newHost.toCharArray(mqttHost, sizeof(mqttHost));
+        newUser.toCharArray(mqttUser, sizeof(mqttUser));
+        newPass.toCharArray(mqttPass, sizeof(mqttPass));
+        prefs.begin("config", false);
+        prefs.putString("mqtt_host", newHost);
+        prefs.putString("mqtt_user", newUser);
+        prefs.putString("mqtt_pass", newPass);
+        prefs.end();
+        Serial.printf("Konfigurasi MQTT disimpan: %s\n", mqttHost);
     }
 
     // Aktifkan auto reconnect WiFi bawaan ESP32
     WiFi.setAutoReconnect(true);
 
     // Setup MQTT
-    mqttClient.setCACert(TLS_ROOT_CA);
     mqtt.setServer(mqttHost, MQTT_PORT);
     mqtt.setCallback(mqttCallback);
     mqtt.setKeepAlive(15);   // deteksi disconnect lebih cepat (default 60 terlalu lama)

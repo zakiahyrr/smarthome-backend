@@ -22,6 +22,7 @@
 #include <WiFiManager.h>
 #include <PubSubClient.h>
 #include <HTTPClient.h>
+#include <WiFiClient.h>
 #include <WiFiClientSecure.h>
 #include "esp_camera.h"
 #include <Preferences.h>
@@ -50,13 +51,27 @@
 // ============================================================
 // CONFIG
 // ============================================================
-#define APP_HOST         "app.example.com"  // ganti dengan domain dashboard
-#define MQTT_PORT        8883
-#define MQTT_USER        "replace-camera-user"
-#define MQTT_PASS        "replace-camera-password"
-#define CAMERA_API_TOKEN "replace-camera-token"
-#define TLS_ROOT_CA      ""  // tempel CA root PEM sebelum flash; jangan gunakan setInsecure()
-#define COOLDOWN_MS      5000
+#define APP_HOST          "zacky.rizkirmdan.my.id"
+#define MQTT_PORT         1883  // listener demo; autentikasi dan ACL tetap wajib
+#define MQTT_DEFAULT_HOST "mqtt.rizkirmdan.my.id"
+#define COOLDOWN_MS       5000
+
+// GTS Root R4 memvalidasi sertifikat dashboard yang sedang aktif.
+static const char APP_TLS_ROOT_CA[] = R"EOF(
+-----BEGIN CERTIFICATE-----
+MIICCTCCAY6gAwIBAgINAgPlwGjvYxqccpBQUjAKBggqhkjOPQQDAzBHMQswCQYD
+VQQGEwJVUzEiMCAGA1UEChMZR29vZ2xlIFRydXN0IFNlcnZpY2VzIExMQzEUMBIG
+A1UEAxMLR1RTIFJvb3QgUjQwHhcNMTYwNjIyMDAwMDAwWhcNMzYwNjIyMDAwMDAw
+WjBHMQswCQYDVQQGEwJVUzEiMCAGA1UEChMZR29vZ2xlIFRydXN0IFNlcnZpY2Vz
+IExMQzEUMBIGA1UEAxMLR1RTIFJvb3QgUjQwdjAQBgcqhkjOPQIBBgUrgQQAIgNi
+AATzdHOnaItgrkO4NcWBMHtLSZ37wWHO5t5GvWvVYRg1rkDdc/eJkTBa6zzuhXyi
+QHY7qca4R9gq55KRanPpsXI5nymfopjTX15YhmUPoYRlBtHci8nHc8iMai/lxKvR
+HYqjQjBAMA4GA1UdDwEB/wQEAwIBhjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQW
+BBSATNbrdP9JNqPV2Py1PsVq8JQdjDAKBggqhkjOPQQDAwNpADBmAjEA6ED/g94D
+9J+uHXqnLrmvT/aDHQ4thQEd0dlq7A/Cr8deVl5c1RxYIigL9zC2L7F8AjEA8GE8
+p/SgguMh1YQdc4acLa/KNJvxn7kjNuK8YAOdgLOaVsjh4rsUecrNIdSUtUlD
+-----END CERTIFICATE-----
+)EOF";
 #define MQTT_RETRY_MS    5000
 
 // ============================================================
@@ -65,7 +80,7 @@
 #define T_PIR "smarthome/sensor/pir"
 
 // OBJECTS
-WiFiClientSecure mqttClient;
+WiFiClient mqttClient;
 WiFiClientSecure httpsClient;
 PubSubClient mqtt(mqttClient);
 Preferences prefs;
@@ -76,7 +91,10 @@ Preferences prefs;
 bool          pirTrigger    = false;
 unsigned long lastCapture   = 0;
 unsigned long lastMqttRetry = 0;
-char          serverHost[40] = "";
+char          serverHost[40] = MQTT_DEFAULT_HOST;
+char          mqttUser[40] = "";
+char          mqttPass[80] = "";
+char          cameraApiToken[96] = "";
 
 // ============================================================
 // INISIALISASI KAMERA
@@ -151,6 +169,11 @@ bool initKamera() {
 void captureAndSend() {
     Serial.println("[CAM] PIR trigger — ambil foto...");
 
+    if (strlen(cameraApiToken) == 0) {
+        Serial.println("[CAM] Token API belum dikonfigurasi melalui portal.");
+        return;
+    }
+
     digitalWrite(LED_FLASH_PIN, HIGH);
     delay(50);
     camera_fb_t* fb = esp_camera_fb_get();
@@ -188,10 +211,10 @@ void captureAndSend() {
 
     HTTPClient http;
     String url = String("https://") + APP_HOST + "/api/kamera/prediksi";
-    httpsClient.setCACert(TLS_ROOT_CA);
+    httpsClient.setCACert(APP_TLS_ROOT_CA);
     http.begin(httpsClient, url);
     http.addHeader("Content-Type", "image/jpeg");
-    http.addHeader("X-Device-Token", CAMERA_API_TOKEN);
+    http.addHeader("X-Device-Token", cameraApiToken);
 
     http.setTimeout(8000);
 
@@ -229,10 +252,15 @@ void mqttReconnect() {
     if (millis() - lastMqttRetry < MQTT_RETRY_MS) return;
     lastMqttRetry = millis();
 
+    if (strlen(mqttUser) == 0 || strlen(mqttPass) == 0) {
+        Serial.println("MQTT belum dikonfigurasi: isi username dan password melalui portal.");
+        return;
+    }
+
     String clientId = "ESP32CAM-" + String((uint32_t)ESP.getEfuseMac(), HEX);
     Serial.printf("MQTT konek ke %s... ", serverHost);
 
-    if (mqtt.connect(clientId.c_str(), MQTT_USER, MQTT_PASS)) {
+    if (mqtt.connect(clientId.c_str(), mqttUser, mqttPass)) {
         Serial.println("OK!");
         mqtt.subscribe(T_PIR);
         Serial.println("Subscribe: " T_PIR);
@@ -253,15 +281,21 @@ void setup() {
     pinMode(LED_FLASH_PIN, OUTPUT);
     digitalWrite(LED_FLASH_PIN, LOW);
 
-    // Load server host dari flash
+    // Load konfigurasi perangkat dari flash
     prefs.begin("config", false);
-    String savedHost = prefs.getString("server_host", "");
-    savedHost.toCharArray(serverHost, sizeof(serverHost));
+    // Host broker mengikuti deployment saat ini; nilai lama di NVS tidak dipakai.
+    String savedUser = prefs.getString("mqtt_user", "");
+    savedUser.toCharArray(mqttUser, sizeof(mqttUser));
+    String savedPass = prefs.getString("mqtt_pass", "");
+    savedPass.toCharArray(mqttPass, sizeof(mqttPass));
+    String savedToken = prefs.getString("camera_api_token", "");
+    savedToken.toCharArray(cameraApiToken, sizeof(cameraApiToken));
     prefs.end();
 
-    // Tombol BOOT (GPIO 0) — tahan 3 detik saat power on untuk reset
+    // Tekan BOOT dalam 3 detik setelah sketch mulai untuk reset.
+    // Jangan tahan saat power-on karena GPIO 0 dapat masuk ke mode flashing.
     pinMode(0, INPUT_PULLUP);
-    Serial.println("Tahan BOOT 3 detik untuk reset, atau tunggu...");
+    Serial.println("Tekan BOOT untuk reset WiFi dan konfigurasi, atau tunggu...");
     bool bootDitekan = false;
     for (int i = 0; i < 30; i++) {
         if (digitalRead(0) == LOW) { bootDitekan = true; break; }
@@ -279,10 +313,16 @@ void setup() {
         ESP.restart();
     }
 
-    // WiFiManager — isi WiFi + IP server (satu IP untuk MQTT dan Flask)
-    WiFiManagerParameter serverParam("server_host", "IP Server (MQTT & Flask)", serverHost, 40);
+    // WiFiManager — isi WiFi, kredensial MQTT, dan token kamera melalui browser.
+    WiFiManagerParameter serverParam("server_host", "Host MQTT", serverHost, sizeof(serverHost));
+    WiFiManagerParameter mqttUserParam("mqtt_user", "Username MQTT", mqttUser, sizeof(mqttUser));
+    WiFiManagerParameter mqttPassParam("mqtt_pass", "Password MQTT", mqttPass, sizeof(mqttPass), " type=\"password\"");
+    WiFiManagerParameter cameraTokenParam("camera_api_token", "Token API Kamera", cameraApiToken, sizeof(cameraApiToken), " type=\"password\"");
     WiFiManager wm;
     wm.addParameter(&serverParam);
+    wm.addParameter(&mqttUserParam);
+    wm.addParameter(&mqttPassParam);
+    wm.addParameter(&cameraTokenParam);
     wm.setConfigPortalTimeout(180);
     wm.setConnectTimeout(30);
     wm.setDebugOutput(false);
@@ -295,27 +335,34 @@ void setup() {
     }
     Serial.printf("WiFi OK! IP: %s\n", WiFi.localIP().toString().c_str());
 
-    // Simpan server host jika diisi/berubah
-    String newHost = String(serverParam.getValue());
-    newHost.trim();
-    if (newHost.length() > 0 && newHost != String(serverHost)) {
-        newHost.toCharArray(serverHost, sizeof(serverHost));
-        prefs.begin("config", false);
-        prefs.putString("server_host", newHost);
-        prefs.end();
-        Serial.printf("Server host disimpan: %s\n", serverHost);
+    // Perangkat lama belum punya kredensial/token di NVS: buka portal untuk migrasi.
+    if (strlen(mqttUser) == 0 || strlen(mqttPass) == 0 || strlen(cameraApiToken) == 0) {
+        Serial.println("Isi kredensial MQTT dan token kamera di portal konfigurasi...");
+        wm.startConfigPortal("SmartHomeCam-Setup");
     }
 
-    if (strlen(serverHost) == 0) {
-        Serial.println("IP server belum diisi — buka portal...");
-        wm.startConfigPortal("SmartHomeCam-Setup");
-        String h = String(serverParam.getValue()); h.trim();
-        if (h.length() > 0) {
-            h.toCharArray(serverHost, sizeof(serverHost));
-            prefs.begin("config", false);
-            prefs.putString("server_host", serverHost);
-            prefs.end();
-        }
+    // Simpan konfigurasi jika diisi/berubah.
+    String newHost = String(serverParam.getValue());
+    newHost.trim();
+    if (newHost.length() == 0) newHost = MQTT_DEFAULT_HOST;
+    String newUser = String(mqttUserParam.getValue());
+    newUser.trim();
+    String newPass = String(mqttPassParam.getValue());
+    newPass.trim();
+    String newToken = String(cameraTokenParam.getValue());
+    newToken.trim();
+    if (newHost != String(serverHost) || newUser != String(mqttUser) || newPass != String(mqttPass) || newToken != String(cameraApiToken)) {
+        newHost.toCharArray(serverHost, sizeof(serverHost));
+        newUser.toCharArray(mqttUser, sizeof(mqttUser));
+        newPass.toCharArray(mqttPass, sizeof(mqttPass));
+        newToken.toCharArray(cameraApiToken, sizeof(cameraApiToken));
+        prefs.begin("config", false);
+        prefs.putString("server_host", newHost);
+        prefs.putString("mqtt_user", newUser);
+        prefs.putString("mqtt_pass", newPass);
+        prefs.putString("camera_api_token", newToken);
+        prefs.end();
+        Serial.printf("Konfigurasi MQTT disimpan: %s\n", serverHost);
     }
 
     // Init kamera
@@ -326,14 +373,13 @@ void setup() {
     }
 
     // Setup MQTT
-    mqttClient.setCACert(TLS_ROOT_CA);
     mqtt.setServer(serverHost, MQTT_PORT);
     mqtt.setCallback(mqttCallback);
     mqtt.setKeepAlive(60);
     mqtt.setBufferSize(256);
 
     Serial.println("========================================");
-    Serial.printf("Siap! Server: %s | Cooldown: %ds\n",
+    Serial.printf("Siap! MQTT: %s | Cooldown: %ds\n",
         serverHost, COOLDOWN_MS / 1000);
     Serial.println("Menunggu PIR trigger via MQTT...");
     Serial.println("========================================");
