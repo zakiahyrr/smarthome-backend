@@ -102,7 +102,9 @@ char          cameraApiToken[96] = "";
 bool useJpegNative = true;  // false jika sensor tidak support JPEG (OV7670)
 
 bool initKamera() {
-    camera_config_t cfg;
+    // Zero-initialize every field. Newer esp32-camera versions add fields,
+    // including grab_mode; leaving them uninitialized can return an old queued frame.
+    camera_config_t cfg = {};
     cfg.ledc_channel = LEDC_CHANNEL_0;
     cfg.ledc_timer   = LEDC_TIMER_0;
     cfg.pin_d0       = Y2_GPIO_NUM;
@@ -133,6 +135,8 @@ bool initKamera() {
         cfg.jpeg_quality = 12;
         cfg.fb_count     = 1;
     }
+    // With two buffers, always request the newest completed frame.
+    cfg.grab_mode = CAMERA_GRAB_LATEST;
 
     esp_err_t err = esp_camera_init(&cfg);
 
